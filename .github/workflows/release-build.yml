@@ -3,7 +3,7 @@ name: Build release candidate
 on:
   push:
     branches:
-      - "release/v0.1.0-beta"
+      - "release/v0.1.2-beta"
   pull_request:
     branches:
       - main
@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PS5_PAYLOAD_SDK: /opt/ps5-payload-sdk
-      VERSION: v0.1.0-beta
+      VERSION: v0.1.2-beta
     steps:
       - uses: actions/checkout@v4
 
@@ -85,31 +85,31 @@ jobs:
       - name: Upload release ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: GhostControl-Expanded-v0.1.0-beta
-          path: dist/GhostControl-Expanded-v0.1.0-beta.zip
+          name: GhostControl-Expanded-v0.1.2-beta
+          path: dist/GhostControl-Expanded-v0.1.2-beta.zip
           if-no-files-found: error
 
   publish-prerelease:
     needs: build
-    if: github.ref == 'refs/heads/release/v0.1.0-beta'
+    if: github.ref == 'refs/heads/release/v0.1.2-beta'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: GhostControl-Expanded-v0.1.0-beta
+          name: GhostControl-Expanded-v0.1.2-beta
           path: dist
       - name: Create or update GitHub prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v0.1.0-beta >/dev/null 2>&1; then
-            gh release upload v0.1.0-beta dist/GhostControl-Expanded-v0.1.0-beta.zip --clobber
+          if gh release view v0.1.2-beta >/dev/null 2>&1; then
+            gh release upload v0.1.2-beta dist/GhostControl-Expanded-v0.1.2-beta.zip --clobber
           else
-            gh release create v0.1.0-beta \
-              dist/GhostControl-Expanded-v0.1.0-beta.zip \
+            gh release create v0.1.2-beta \
+              dist/GhostControl-Expanded-v0.1.2-beta.zip \
               --target "${GITHUB_SHA}" \
-              --title "GhostControl Expanded v0.1.0-beta" \
-              --notes-file docs/RELEASE_NOTES_0.1.0-beta.md \
+              --title "GhostControl Expanded v0.1.2-beta" \
+              --notes-file docs/RELEASE_NOTES_0.1.2-beta.md \
               --prerelease
           fi
