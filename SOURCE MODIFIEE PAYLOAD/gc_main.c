@@ -1563,6 +1563,7 @@ static void *usb_hid_thread(void *arg) {
 main_loop: ;
     int is_ds4 = ds4_is_supported_vidpid(vid, pid);
     int is_ds3 = ds3_is_supported_vidpid(vid, pid);
+    int is_generic_hid = generic_hid_is_supported(vid, pid);
     int is_gamecube = gamecube_is_adapter(vid, pid);
     int is_mamba_xinput = mamba_is_xinput_vidpid(vid, pid);
     int is_mamba_switch = mamba_is_switch_vidpid(vid, pid);
