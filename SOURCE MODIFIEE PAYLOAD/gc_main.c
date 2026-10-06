@@ -125,6 +125,13 @@ static volatile int      g_physical_recover_last_scan = -1000;
 static uint64_t          g_virtual_id_history[32];
 static unsigned          g_virtual_id_history_w = 0;
 
+/* GameCube multi-port auxiliary VDAs. The normal g_slots entry owns the
+ * physical USB adapter and one primary GameCube port; these handles represent
+ * the remaining physical ports. Only one GameCube adapter is supported at a
+ * time in the first multi-port implementation. */
+static volatile int32_t  g_gc_aux_handle[GAMECUBE_ADAPTER_PORTS] = { -1, -1, -1, -1 };
+static volatile uint64_t g_gc_aux_vdev[GAMECUBE_ADAPTER_PORTS] = { 0, 0, 0, 0 };
+
 /* Assignment serialization: only ONE controller may show its assignment
  * dialog at a time. g_assign_slot = slot awaiting user confirmation, or -1.
  * Without this, multiple dialogs stack and all bind to the same user. */
@@ -153,6 +160,7 @@ static uint64_t klog_find_physical_open_pad(uint64_t virtual_dev_id);
 static int is_our_virtual_device_id(uint64_t dev_id);
 static void remember_virtual_device_id(uint64_t dev_id);
 static int any_mamba_slot_active(void);
+static int any_gamecube_adapter_active(void);
 static void remember_physical_pad_for_recovery(uint64_t dev_id, const char *reason);
 static void physical_recovery_tick(int scan);
 
@@ -551,6 +559,20 @@ static void physical_recovery_tick(int scan) {
         pthread_mutex_unlock(&g_slot_lock);
         notify("Ghost-Control by StonedModder: official controller restored");
     }
+}
+
+static int any_gamecube_adapter_active(void) {
+    int active = 0;
+    pthread_mutex_lock(&g_slot_lock);
+    for (int s = 0; s < MAX_SLOTS; s++) {
+        if (g_slots[s].usb_active &&
+            gamecube_is_adapter(g_slots[s].vid, g_slots[s].pid)) {
+            active = 1;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&g_slot_lock);
+    return active;
 }
 
 static int any_mamba_slot_active(void) {
@@ -968,6 +990,94 @@ static int32_t create_vda_for_slot(int slot) {
     return handle;
 }
 
+static int32_t create_gamecube_aux_vda(int owner_slot, unsigned port) {
+    if (port >= GAMECUBE_ADAPTER_PORTS)
+        return -1;
+
+    if (g_gc_aux_handle[port] >= 0)
+        return g_gc_aux_handle[port];
+
+    struct { int32_t size; int32_t userId; int32_t pad[6]; } vdp;
+    const int32_t SEN = (int32_t)0xDEADBEEFu;
+    memset(&vdp, 0, sizeof(vdp));
+    vdp.size = sizeof(vdp);
+    vdp.userId = 1;
+    for (int k = 0; k < 6; k++)
+        vdp.pad[k] = SEN;
+
+    int ret = scePadVirtualDeviceAddDevice(&vdp, VIRTUAL_DEVICE_TYPE_DUALSENSE);
+    gp_log("slot[%d] GameCube port %u aux VDA ret=0x%08x\n",
+           owner_slot, port + 1, (uint32_t)ret);
+
+    int32_t handle = (ret > 0) ? ret : -1;
+    for (int k = 0; k < 6; k++) {
+        if (vdp.pad[k] != SEN && vdp.pad[k] > 0) {
+            if (handle < 0) handle = vdp.pad[k];
+            break;
+        }
+    }
+
+    uint64_t dev_id = klog_dequeue_ms(5000);
+    if (dev_id) {
+        remember_virtual_device_id(dev_id);
+        int br = shellui_pad_force_bind(dev_id, g_inject_uid);
+        gp_log("slot[%d] GameCube port %u aux force_bind(0x%llx,0x%08x) ret=%d\n",
+               owner_slot, port + 1, (unsigned long long)dev_id,
+               (uint32_t)g_inject_uid, br);
+        handle = (int32_t)(dev_id & 0xffffffffu);
+    }
+
+    if (handle < 0) {
+        gp_log("slot[%d] GameCube port %u aux VDA creation failed\n",
+               owner_slot, port + 1);
+        return -1;
+    }
+
+    pthread_mutex_lock(&g_slot_lock);
+    g_gc_aux_handle[port] = handle;
+    g_gc_aux_vdev[port] = dev_id;
+    pthread_mutex_unlock(&g_slot_lock);
+
+    notify("Ghost-Control: GameCube port %u active", port + 1);
+    gp_log("slot[%d] GameCube port %u aux VDI handle=0x%x\n",
+           owner_slot, port + 1, (uint32_t)handle);
+    return handle;
+}
+
+static void destroy_gamecube_aux_vda(int owner_slot, unsigned port,
+                                     const char *reason) {
+    if (port >= GAMECUBE_ADAPTER_PORTS)
+        return;
+
+    int32_t handle;
+    uint64_t vdev;
+    pthread_mutex_lock(&g_slot_lock);
+    handle = g_gc_aux_handle[port];
+    vdev = g_gc_aux_vdev[port];
+    g_gc_aux_handle[port] = -1;
+    g_gc_aux_vdev[port] = 0;
+    pthread_mutex_unlock(&g_slot_lock);
+
+    if (handle < 0 && !vdev)
+        return;
+
+    gp_log("slot[%d] GameCube port %u aux release handle=0x%x vdev=0x%llx reason=%s\n",
+           owner_slot, port + 1, (uint32_t)handle,
+           (unsigned long long)vdev, reason ? reason : "-");
+    if (vdev)
+        shellui_pad_disconnect_device(vdev);
+    if (handle >= 0)
+        scePadVirtualDeviceDeleteDevice(handle);
+}
+
+static void inject_gamecube_aux(unsigned port, const ScePadData *pad) {
+    if (port >= GAMECUBE_ADAPTER_PORTS || !pad)
+        return;
+    int32_t handle = g_gc_aux_handle[port];
+    if (handle >= 0)
+        scePadVirtualDeviceInsertData(handle, pad);
+}
+
 /* ── USB HID thread ───────────────────────────────────────────────────── */
 /* Single-session: receives slot+path+vid+pid, runs until disconnect, then exits.
  * Manager thread handles re-detection after exit. */
@@ -997,6 +1107,8 @@ static void *usb_hid_thread(void *arg) {
     void    *buffers[1]; uint32_t lengths[1];
     int fd = -1, out_opened = 0;
     int usb_ready_notified = 0;
+    int gc_primary_port = -1;
+    int gc_port_seen[GAMECUBE_ADAPTER_PORTS] = {0,0,0,0};
 
     gp_log("slot[%d] USB thread: %s VID=0x%04x PID=0x%04x\n",
            slot, dev_path, vid, pid);
@@ -1312,12 +1424,99 @@ main_loop: ;
         if (is_ds4) {
             injected = ds4_handle_packet(fd, eps, buf, len, &pad);
         } else if (is_gamecube) {
-            /*
-             * Phase 1 exposes adapter port 1 as this virtual controller.
-             * The parser understands all four ports; multi-VDA adapter routing
-             * is the next GameCube milestone.
-             */
-            injected = gamecube_parse_port(buf, len, 0, &pad);
+            ScePadData gc_pad[GAMECUBE_ADAPTER_PORTS];
+            int gc_present[GAMECUBE_ADAPTER_PORTS] = {0,0,0,0};
+
+            for (unsigned p = 0; p < GAMECUBE_ADAPTER_PORTS; p++) {
+                memset(&gc_pad[p], 0, sizeof(gc_pad[p]));
+                gc_pad[p].quat.w = 1.0f;
+                gc_present[p] = gamecube_parse_port(buf, len, p, &gc_pad[p]);
+
+                if (gc_present[p] && !gc_port_seen[p]) {
+                    gc_port_seen[p] = 1;
+                    gp_log("slot[%d] GameCube physical port %u connected\n",
+                           slot, p + 1);
+                    notify("Ghost-Control: GameCube port %u connected", p + 1);
+                } else if (!gc_present[p] && gc_port_seen[p]) {
+                    gc_port_seen[p] = 0;
+                    gp_log("slot[%d] GameCube physical port %u disconnected\n",
+                           slot, p + 1);
+                    if ((int)p != gc_primary_port)
+                        destroy_gamecube_aux_vda(slot, p, "controller unplugged");
+                }
+            }
+
+            /* The g_slots VDA represents the first available port that does not
+             * already own an auxiliary VDA. This means a controller plugged only
+             * into adapter port 2/3/4 can still become the primary controller. */
+            if (gc_primary_port >= 0 && !gc_present[gc_primary_port]) {
+                gp_log("slot[%d] GameCube primary port %d disconnected\n",
+                       slot, gc_primary_port + 1);
+                gc_primary_port = -1;
+            }
+
+            /* Before the primary VDA is confirmed, let an actual button press
+             * take priority over an earlier idle/neutral port selection. */
+            if (!g_slots[slot].confirmed && gc_primary_port >= 0 &&
+                gc_present[gc_primary_port] &&
+                gc_pad[gc_primary_port].buttons == 0) {
+                for (unsigned p = 0; p < GAMECUBE_ADAPTER_PORTS; p++) {
+                    if ((int)p != gc_primary_port && gc_present[p] &&
+                        gc_pad[p].buttons != 0 && g_gc_aux_handle[p] < 0) {
+                        gp_log("slot[%d] GameCube primary moved port %d -> %u on activity\n",
+                               slot, gc_primary_port + 1, p + 1);
+                        gc_primary_port = (int)p;
+                        break;
+                    }
+                }
+            }
+
+            if (gc_primary_port < 0) {
+                /* Prefer the port whose player is actively pressing a button,
+                 * then fall back to the first connected unassigned port. */
+                for (unsigned p = 0; p < GAMECUBE_ADAPTER_PORTS; p++) {
+                    if (gc_present[p] && gc_pad[p].buttons != 0 &&
+                        g_gc_aux_handle[p] < 0) {
+                        gc_primary_port = (int)p;
+                        break;
+                    }
+                }
+                if (gc_primary_port < 0) {
+                    for (unsigned p = 0; p < GAMECUBE_ADAPTER_PORTS; p++) {
+                        if (gc_present[p] && g_gc_aux_handle[p] < 0) {
+                            gc_primary_port = (int)p;
+                            break;
+                        }
+                    }
+                }
+                if (gc_primary_port >= 0)
+                    gp_log("slot[%d] GameCube port %d selected as primary VDA\n",
+                           slot, gc_primary_port + 1);
+            }
+
+            /* Extra physical ports get their own VDA on their first button
+             * press. Delaying creation prevents four assignment events from
+             * appearing at once when an adapter is connected. */
+            for (unsigned p = 0; p < GAMECUBE_ADAPTER_PORTS; p++) {
+                if (!gc_present[p] || (int)p == gc_primary_port)
+                    continue;
+
+                /* Wait until the primary VDA assignment has been confirmed
+                 * before creating another VDA, preventing stacked dialogs. */
+                if (g_gc_aux_handle[p] < 0 && gc_pad[p].buttons != 0 &&
+                    g_slots[slot].confirmed)
+                    create_gamecube_aux_vda(slot, p);
+
+                if (g_gc_aux_handle[p] >= 0)
+                    inject_gamecube_aux(p, &gc_pad[p]);
+            }
+
+            if (gc_primary_port >= 0 && gc_present[gc_primary_port]) {
+                pad = gc_pad[gc_primary_port];
+                injected = 1;
+            } else {
+                injected = 0;
+            }
         } else if (is_mamba_xinput) {
             injected = mamba_xinput_handle_packet(fd, eps, buf, len, &pad);
         } else if (pid == PID_XBOX) {
@@ -1391,6 +1590,11 @@ main_loop: ;
     }
 
 reinit:
+    if (gamecube_is_adapter(vid, pid)) {
+        for (unsigned p = 0; p < GAMECUBE_ADAPTER_PORTS; p++)
+            destroy_gamecube_aux_vda(slot, p, "adapter reinit");
+        gc_primary_port = -1;
+    }
     g_slots[slot].usb_fd = -1;  /* unregister before teardown */
     if (usb_ready_notified) { notify("Ghost-Control by StonedModder: slot[%d] controller disconnected", slot); usb_ready_notified=0; }
     memset(&stop,0,sizeof(stop)); stop.ep_index=0; ioctl(fd,USB_FS_STOP,&stop);
@@ -1404,6 +1608,11 @@ uninit_exit:
     close(fd); fd=-1;
 
 exit_slot:
+    if (gamecube_is_adapter(vid, pid)) {
+        for (unsigned p = 0; p < GAMECUBE_ADAPTER_PORTS; p++)
+            destroy_gamecube_aux_vda(slot, p, "adapter thread exit");
+        gc_primary_port = -1;
+    }
     gp_log("slot[%d] USB thread exiting — freeing slot\n", slot);
     uint64_t evicted_phys = g_slots[slot].evicted_physical_dev;
     uint64_t vdev = g_slots[slot].virtual_dev_id;
@@ -1481,6 +1690,20 @@ static void *controller_manager_thread(void *arg) {
             /* Try to identify controller */
             uint16_t vid=0, pid=0;
             if (!probe_one_path(path, &vid, &pid)) continue;
+
+            if (gamecube_is_adapter(vid, pid) && any_gamecube_adapter_active()) {
+                if ((scan % 5) == 0)
+                    gp_log("manager: %s ignored because another GameCube adapter is active\n", path);
+                continue;
+            }
+
+            /* A four-port GameCube adapter can consume the full virtual-pad
+             * budget. Do not start additional USB controllers while it is live. */
+            if (!gamecube_is_adapter(vid, pid) && any_gamecube_adapter_active()) {
+                if ((scan % 5) == 0)
+                    gp_log("manager: %s deferred while GameCube adapter is active\n", path);
+                continue;
+            }
 
             if (mamba_is_supported_vidpid(vid, pid) && any_mamba_slot_active()) {
                 if ((scan % 5) == 0)
@@ -1638,6 +1861,14 @@ static void elevate_credentials(void) {
  * close()/_exit() are async-signal-safe; the USB ioctls run at process death. */
 static void cleanup_and_exit(int sig) {
     (void)sig;
+
+    /* Clean up GameCube auxiliary VDAs that are not represented in g_slots. */
+    for (unsigned p = 0; p < GAMECUBE_ADAPTER_PORTS; p++) {
+        if (g_gc_aux_handle[p] >= 0)
+            scePadVirtualDeviceDeleteDevice(g_gc_aux_handle[p]);
+        g_gc_aux_handle[p] = -1;
+        g_gc_aux_vdev[p] = 0;
+    }
     for (int s = 0; s < MAX_SLOTS; s++) {
         int fd = g_slots[s].usb_fd;
         if (fd >= 0) {
@@ -1691,6 +1922,12 @@ int main(void) {
         g_slots[s].dev_path[0]= '\0';
     }
     g_assign_slot = -1;
+
+    /* Init GameCube auxiliary VDA bookkeeping. */
+    for (unsigned p = 0; p < GAMECUBE_ADAPTER_PORTS; p++) {
+        g_gc_aux_handle[p] = -1;
+        g_gc_aux_vdev[p] = 0;
+    }
 
     /* Clean teardown when the next deploy kills us — releases the controllers */
     signal(SIGTERM, cleanup_and_exit);
