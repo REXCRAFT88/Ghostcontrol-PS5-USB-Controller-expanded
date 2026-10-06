@@ -212,6 +212,155 @@ void nintendo_parse_n64_0x3f(const uint8_t *b, ScePadData *o) {
     o->quat.w = 1.0f;
 }
 
+
+static uint32_t retro_dpad_from_left(uint8_t bl) {
+    uint32_t btn = 0;
+    if (bl & 0x02u) btn |= SCE_PAD_BUTTON_UP;
+    if (bl & 0x01u) btn |= SCE_PAD_BUTTON_DOWN;
+    if (bl & 0x04u) btn |= SCE_PAD_BUTTON_RIGHT;
+    if (bl & 0x08u) btn |= SCE_PAD_BUTTON_LEFT;
+    return btn;
+}
+
+static void retro_finish(ScePadData *o, uint32_t btn) {
+    memset(o, 0, sizeof(*o));
+    o->buttons = btn;
+    o->leftStick.x = 128u;
+    o->leftStick.y = 128u;
+    o->rightStick.x = 128u;
+    o->rightStick.y = 128u;
+    o->connected = 1;
+    o->quat.w = 1.0f;
+}
+
+void nintendo_parse_snes_0x30(const uint8_t *b, ScePadData *o) {
+    if (!b || !o) return;
+    const uint8_t br = b[3], bs = b[4], bl = b[5];
+    uint32_t btn = retro_dpad_from_left(bl);
+
+    /* Physical SNES diamond preserved by position. */
+    if (br & 0x08u) btn |= SCE_PAD_BUTTON_CIRCLE;    /* A / east */
+    if (br & 0x04u) btn |= SCE_PAD_BUTTON_CROSS;     /* B / south */
+    if (br & 0x02u) btn |= SCE_PAD_BUTTON_TRIANGLE;  /* X / north */
+    if (br & 0x01u) btn |= SCE_PAD_BUTTON_SQUARE;    /* Y / west */
+
+    if (bl & 0x40u) btn |= SCE_PAD_BUTTON_L1;
+    if (br & 0x40u) btn |= SCE_PAD_BUTTON_R1;
+    if (bl & 0x80u) btn |= SCE_PAD_BUTTON_L2;
+    if (br & 0x80u) btn |= SCE_PAD_BUTTON_R2;
+
+    if (bs & 0x01u) btn |= SCE_PAD_BUTTON_SHARE;    /* Select */
+    if (bs & 0x02u) btn |= SCE_PAD_BUTTON_OPTIONS;  /* Start */
+    if (bs & 0x10u) btn |= SCE_PAD_BUTTON_PS;       /* Home */
+    if (bs & 0x20u) btn |= SCE_PAD_BUTTON_SHARE;    /* Capture */
+
+    retro_finish(o, btn);
+    o->analogButtons.l2 = (bl & 0x80u) ? 255u : 0u;
+    o->analogButtons.r2 = (br & 0x80u) ? 255u : 0u;
+}
+
+void nintendo_parse_snes_0x3f(const uint8_t *b, ScePadData *o) {
+    if (!b || !o) return;
+    const uint8_t br = b[1], bs = b[2], bl = b[8];
+    uint32_t btn = hat_to_dpad(b[3]);
+
+    if (br & 0x08u) btn |= SCE_PAD_BUTTON_CIRCLE;
+    if (br & 0x04u) btn |= SCE_PAD_BUTTON_CROSS;
+    if (br & 0x02u) btn |= SCE_PAD_BUTTON_TRIANGLE;
+    if (br & 0x01u) btn |= SCE_PAD_BUTTON_SQUARE;
+    if (bl & 0x40u) btn |= SCE_PAD_BUTTON_L1;
+    if (br & 0x40u) btn |= SCE_PAD_BUTTON_R1;
+    if (bl & 0x80u) btn |= SCE_PAD_BUTTON_L2;
+    if (br & 0x80u) btn |= SCE_PAD_BUTTON_R2;
+    if (bs & 0x01u) btn |= SCE_PAD_BUTTON_SHARE;
+    if (bs & 0x02u) btn |= SCE_PAD_BUTTON_OPTIONS;
+    if (bs & 0x10u) btn |= SCE_PAD_BUTTON_PS;
+    if (bs & 0x20u) btn |= SCE_PAD_BUTTON_SHARE;
+
+    retro_finish(o, btn);
+    o->analogButtons.l2 = (bl & 0x80u) ? 255u : 0u;
+    o->analogButtons.r2 = (br & 0x80u) ? 255u : 0u;
+}
+
+void nintendo_parse_genesis_0x30(const uint8_t *b, ScePadData *o) {
+    if (!b || !o) return;
+    const uint8_t br = b[3], bs = b[4], bl = b[5];
+    uint32_t btn = retro_dpad_from_left(bl);
+
+    /*
+     * Linux hid-nintendo semantic mapping:
+     * A=JC_A, B=JC_B, C=JC_R, X=JC_X, Y=JC_Y, Z=JC_L,
+     * Mode=JC_ZR, Start=JC_PLUS.
+     */
+    if (br & 0x08u) btn |= SCE_PAD_BUTTON_SQUARE;    /* A / west */
+    if (br & 0x04u) btn |= SCE_PAD_BUTTON_CROSS;     /* B / south */
+    if (br & 0x40u) btn |= SCE_PAD_BUTTON_CIRCLE;    /* C / east */
+    if (br & 0x02u) btn |= SCE_PAD_BUTTON_L1;        /* X / top-left */
+    if (br & 0x01u) btn |= SCE_PAD_BUTTON_TRIANGLE;  /* Y / north */
+    if (bl & 0x40u) btn |= SCE_PAD_BUTTON_R1;        /* Z / top-right */
+    if (br & 0x80u) btn |= SCE_PAD_BUTTON_SHARE;     /* Mode */
+    if (bs & 0x02u) btn |= SCE_PAD_BUTTON_OPTIONS;   /* Start */
+    if (bs & 0x10u) btn |= SCE_PAD_BUTTON_PS;        /* Home */
+    if (bs & 0x20u) btn |= SCE_PAD_BUTTON_SHARE;     /* Capture */
+
+    retro_finish(o, btn);
+}
+
+void nintendo_parse_genesis_0x3f(const uint8_t *b, ScePadData *o) {
+    if (!b || !o) return;
+    const uint8_t br = b[1], bs = b[2], bl = b[8];
+    uint32_t btn = hat_to_dpad(b[3]);
+
+    if (br & 0x08u) btn |= SCE_PAD_BUTTON_SQUARE;
+    if (br & 0x04u) btn |= SCE_PAD_BUTTON_CROSS;
+    if (br & 0x40u) btn |= SCE_PAD_BUTTON_CIRCLE;
+    if (br & 0x02u) btn |= SCE_PAD_BUTTON_L1;
+    if (br & 0x01u) btn |= SCE_PAD_BUTTON_TRIANGLE;
+    if (bl & 0x40u) btn |= SCE_PAD_BUTTON_R1;
+    if (br & 0x80u) btn |= SCE_PAD_BUTTON_SHARE;
+    if (bs & 0x02u) btn |= SCE_PAD_BUTTON_OPTIONS;
+    if (bs & 0x10u) btn |= SCE_PAD_BUTTON_PS;
+    if (bs & 0x20u) btn |= SCE_PAD_BUTTON_SHARE;
+
+    retro_finish(o, btn);
+}
+
+static void nintendo_parse_profile_0x30(
+    int profile, const uint8_t *buf, ScePadData *out_pad) {
+    switch (profile) {
+    case NINTENDO_PROFILE_N64:
+        nintendo_parse_n64_0x30(buf, out_pad);
+        break;
+    case NINTENDO_PROFILE_SNES:
+        nintendo_parse_snes_0x30(buf, out_pad);
+        break;
+    case NINTENDO_PROFILE_GENESIS:
+        nintendo_parse_genesis_0x30(buf, out_pad);
+        break;
+    default:
+        nintendo_parse_0x30(buf, out_pad);
+        break;
+    }
+}
+
+static void nintendo_parse_profile_0x3f(
+    int profile, const uint8_t *buf, ScePadData *out_pad) {
+    switch (profile) {
+    case NINTENDO_PROFILE_N64:
+        nintendo_parse_n64_0x3f(buf, out_pad);
+        break;
+    case NINTENDO_PROFILE_SNES:
+        nintendo_parse_snes_0x3f(buf, out_pad);
+        break;
+    case NINTENDO_PROFILE_GENESIS:
+        nintendo_parse_genesis_0x3f(buf, out_pad);
+        break;
+    default:
+        nintendo_parse_0x3f(buf, out_pad);
+        break;
+    }
+}
+
 int nintendo_handle_packet_profile(int fd, struct usb_fs_endpoint *eps,
                                    const uint8_t *buf, uint32_t len,
                                    int *hs_state, uint8_t *seq,
@@ -228,28 +377,19 @@ int nintendo_handle_packet_profile(int fd, struct usb_fs_endpoint *eps,
         if (*hs_state != HS_STREAMING)
             *hs_state = HS_STREAMING;
 
-        if (profile == NINTENDO_PROFILE_N64)
-            nintendo_parse_n64_0x30(buf, out_pad);
-        else
-            nintendo_parse_0x30(buf, out_pad);
+        nintendo_parse_profile_0x30(profile, buf, out_pad);
         return 1;
     }
 
     if (rid == 0x3fu && len >= 9u) {
-        if (profile == NINTENDO_PROFILE_N64)
-            nintendo_parse_n64_0x3f(buf, out_pad);
-        else
-            nintendo_parse_0x3f(buf, out_pad);
+        nintendo_parse_profile_0x3f(profile, buf, out_pad);
         return 1;
     }
 
     if (rid == 0x21u && len >= 12u) {
         LOG("0x21 ACK subcmd=0x%02x hs=%d\n", (buf[12] & 0x7fu), *hs_state);
         if (*hs_state == HS_STREAMING) {
-            if (profile == NINTENDO_PROFILE_N64)
-                nintendo_parse_n64_0x30(buf, out_pad);
-            else
-                nintendo_parse_0x30(buf, out_pad);
+            nintendo_parse_profile_0x30(profile, buf, out_pad);
             return 1;
         }
         return 0;
