@@ -52,7 +52,7 @@ release: all status stop
 
 audit:
 	powershell -NoProfile -ExecutionPolicy Bypass \
-		-File ..\tests\static-audit.ps1
+		-File .\tests\static-audit.ps1
 
 clean:
 	rm -f PoorDS4rc*.elf $(STATUS_TARGET) $(STOP_TARGET)
