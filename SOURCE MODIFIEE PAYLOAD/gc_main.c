@@ -1170,21 +1170,26 @@ static void *usb_hid_thread(void *arg) {
         eps[0].ppBuffer=buffers; eps[0].pLength=lengths; eps[0].nFrames=1;
         eps[0].timeout=100;
         eps[0].flags=USB_FS_FLAG_SINGLE_SHORT_OK|USB_FS_FLAG_MULTI_SHORT_OK;
+        if (gamecube_is_nintendo_adapter(vid, pid)) {
+            memset(&fs_open,0,sizeof(fs_open));
+            fs_open.ep_index=1; fs_open.ep_no=GAMECUBE_ADAPTER_EP_OUT;
+            fs_open.max_bufsize=64; fs_open.max_frames=1;
+            out_opened = (ioctl(fd,USB_FS_OPEN,&fs_open)==0) ? 1 : 0;
+            if (!out_opened) {
+                gp_log("slot[%d] GameCube Nintendo-mode OUT ep=0x%02x fail errno=%d\n",
+                       slot, GAMECUBE_ADAPTER_EP_OUT, errno);
+                goto uninit_exit;
+            }
 
-        memset(&fs_open,0,sizeof(fs_open));
-        fs_open.ep_index=1; fs_open.ep_no=GAMECUBE_ADAPTER_EP_OUT;
-        fs_open.max_bufsize=64; fs_open.max_frames=1;
-        out_opened = (ioctl(fd,USB_FS_OPEN,&fs_open)==0) ? 1 : 0;
-        if (!out_opened) {
-            gp_log("slot[%d] GameCube adapter OUT ep=0x%02x fail errno=%d\n",
-                   slot, GAMECUBE_ADAPTER_EP_OUT, errno);
-            goto uninit_exit;
+            int gc_init_ret = gamecube_send_init(fd, eps);
+            gp_log("slot[%d] GameCube Nintendo-mode init ret=%d\n", slot, gc_init_ret);
+            if (gc_init_ret != 0)
+                goto uninit_exit;
+        } else {
+            out_opened = 0;
+            gp_log("slot[%d] GameCube PC mode VID=0x%04x PID=0x%04x input-only\n",
+                   slot, vid, pid);
         }
-
-        int gc_init_ret = gamecube_send_init(fd, eps);
-        gp_log("slot[%d] GameCube adapter init ret=%d\n", slot, gc_init_ret);
-        if (gc_init_ret != 0)
-            goto uninit_exit;
 
         goto main_loop;
     }
@@ -1259,6 +1264,7 @@ static void *usb_hid_thread(void *arg) {
 main_loop: ;
     int is_ds4 = (vid == VID_SONY || vid == VID_HORI);
     int is_gamecube = gamecube_is_adapter(vid, pid);
+    int is_gamecube_pc = gamecube_is_pc_adapter(vid, pid);
     int is_mamba_xinput = mamba_is_xinput_vidpid(vid, pid);
     int is_mamba_switch = mamba_is_switch_vidpid(vid, pid);
     int hs_state = (pid==PID_XBOX || is_ds4 || is_gamecube || is_mamba_xinput) ? HS_STREAMING : HS_WAIT_81_01;
@@ -1312,12 +1318,14 @@ main_loop: ;
         if (is_ds4) {
             injected = ds4_handle_packet(fd, eps, buf, len, &pad);
         } else if (is_gamecube) {
-            /*
-             * Phase 1 exposes adapter port 1 as this virtual controller.
-             * The parser understands all four ports; multi-VDA adapter routing
-             * is the next GameCube milestone.
-             */
-            injected = gamecube_parse_port(buf, len, 0, &pad);
+            if (is_gamecube_pc) {
+                unsigned pc_port = 0;
+                int parsed = gamecube_parse_pc_packet(
+                    buf, len, &pc_port, &pad);
+                injected = (parsed > 0 && pc_port == 0u) ? 1 : 0;
+            } else {
+                injected = gamecube_parse_port(buf, len, 0, &pad);
+            }
         } else if (is_mamba_xinput) {
             injected = mamba_xinput_handle_packet(fd, eps, buf, len, &pad);
         } else if (pid == PID_XBOX) {
@@ -1502,7 +1510,8 @@ static void *controller_manager_thread(void *arg) {
             }
 
             const char *name =
-                gamecube_is_adapter(vid,pid) ? gamecube_name() :
+                gamecube_is_pc_adapter(vid,pid) ? "GameCube Adapter (PC mode)" :
+                gamecube_is_nintendo_adapter(vid,pid) ? gamecube_name() :
                 mamba_is_supported_vidpid(vid,pid) ? mamba_name(vid,pid) :
                                                      "Unknown";
 

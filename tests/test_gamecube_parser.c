@@ -98,6 +98,90 @@ static void test_all_four_ports_are_independent(void) {
     assert((pad.buttons & SCE_PAD_BUTTON_TRIANGLE) && pad.leftStick.x == 31);
 }
 
+static void test_pc_mode_legacy_report(void) {
+    uint8_t r[10] = {0};
+    ScePadData pad;
+    unsigned port = 99;
+
+    /* Legacy packet: byte 0 is 1-based controller slot. */
+    r[0] = 3; /* physical adapter port 3 -> zero-based port 2 */
+    r[1] = 0x02 | 0x01 | 0x80 | 0x20 | 0x10; /* A + X + Z + R/L clicks */
+    r[2] = 0x20 | 0x10 | 0x02; /* right + up + Start */
+    r[3] = 10;  /* LX */
+    r[4] = 20;  /* LY */
+    r[5] = 30;  /* C-stick Y in legacy orientation */
+    r[6] = 40;  /* C-stick X in legacy orientation */
+    r[7] = 77;  /* L analog */
+    r[8] = 88;  /* R analog */
+    r[9] = 0;
+
+    memset(&pad, 0, sizeof(pad));
+    assert(gamecube_parse_pc_packet(r, sizeof(r), &port, &pad) == 1);
+    assert(port == 2);
+    assert(pad.buttons & SCE_PAD_BUTTON_CROSS);
+    assert(pad.buttons & SCE_PAD_BUTTON_SQUARE);
+    assert(pad.buttons & SCE_PAD_BUTTON_R1);
+    assert(pad.buttons & SCE_PAD_BUTTON_R2);
+    assert(pad.buttons & SCE_PAD_BUTTON_L2);
+    assert(pad.buttons & SCE_PAD_BUTTON_RIGHT);
+    assert(pad.buttons & SCE_PAD_BUTTON_UP);
+    assert(pad.buttons & SCE_PAD_BUTTON_OPTIONS);
+    assert(pad.leftStick.x == 10);
+    assert(pad.leftStick.y == 235);
+    assert(pad.rightStick.x == 215); /* 255 - p[5] */
+    assert(pad.rightStick.y == 30);  /* p[4] */
+    assert(pad.analogButtons.l2 == 77);
+    assert(pad.analogButtons.r2 == 88);
+    assert(pad.connected == 1);
+}
+
+static void test_pc_mode_v7_report(void) {
+    uint8_t r[9] = {0};
+    ScePadData pad;
+    unsigned port = 99;
+
+    r[0] = 0x04 | 0x08; /* B + Y */
+    r[1] = 0x80 | 0x40; /* left + down */
+    r[2] = 50;
+    r[3] = 60;
+    r[4] = 70;
+    r[5] = 80;
+    r[6] = 90;
+    r[7] = 100;
+
+    memset(&pad, 0, sizeof(pad));
+    assert(gamecube_parse_pc_packet(r, sizeof(r), &port, &pad) == 1);
+    assert(port == 0);
+    assert(pad.buttons & SCE_PAD_BUTTON_CIRCLE);
+    assert(pad.buttons & SCE_PAD_BUTTON_TRIANGLE);
+    assert(pad.buttons & SCE_PAD_BUTTON_LEFT);
+    assert(pad.buttons & SCE_PAD_BUTTON_DOWN);
+    assert(pad.leftStick.x == 50);
+    assert(pad.leftStick.y == 195);
+    assert(pad.rightStick.x == 80);
+    assert(pad.rightStick.y == 185);
+    assert(pad.analogButtons.l2 == 90);
+    assert(pad.analogButtons.r2 == 100);
+}
+
+static void test_pc_mode_rejections(void) {
+    uint8_t bad_slot[10] = {0};
+    uint8_t bad_len[8] = {0};
+    ScePadData pad;
+    unsigned port = 0;
+
+    bad_slot[0] = 0;
+    assert(gamecube_parse_pc_packet(
+        bad_slot, sizeof(bad_slot), &port, &pad) == 0);
+
+    bad_slot[0] = 5;
+    assert(gamecube_parse_pc_packet(
+        bad_slot, sizeof(bad_slot), &port, &pad) == 0);
+
+    assert(gamecube_parse_pc_packet(
+        bad_len, sizeof(bad_len), &port, &pad) == 0);
+}
+
 static void test_empty_port_and_invalid_report(void) {
     uint8_t r[GAMECUBE_ADAPTER_REPORT_SIZE] = {0};
     ScePadData pad;
@@ -114,8 +198,17 @@ static void test_empty_port_and_invalid_report(void) {
 int main(void) {
     test_adapter_init_command();
     assert(gamecube_is_adapter(0x057e, 0x0337));
+    assert(gamecube_is_nintendo_adapter(0x057e, 0x0337));
+    assert(gamecube_is_pc_adapter(0x0079, 0x1843));
+    assert(gamecube_is_pc_adapter(0x0079, 0x1844));
+    assert(gamecube_is_pc_adapter(0x0079, 0x1846));
+    assert(gamecube_is_adapter(0x0079, 0x1843));
+    assert(!gamecube_is_pc_adapter(0x0079, 0x1847));
     assert(!gamecube_is_adapter(0x057e, 0x2009));
 
+    test_pc_mode_legacy_report();
+    test_pc_mode_v7_report();
+    test_pc_mode_rejections();
     test_port_zero_mapping();
     test_all_four_ports_are_independent();
     test_empty_port_and_invalid_report();
