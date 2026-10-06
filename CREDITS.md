@@ -15,3 +15,9 @@ ont ete gardes dans les sources autant que possible.
   changement user, tests Manba/officielle .
 
 
+
+## Virtual Pad Feedback Research
+
+- Control4Free by MoHadiShibli
+  - https://github.com/MoHadiShibli/Control4Free
+  - Reference for observed PS5 `scePadVirtualDeviceGetRemoteSetting` output layout used by the experimental GameCube rumble bridge.
