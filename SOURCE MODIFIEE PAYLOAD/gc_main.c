@@ -439,6 +439,11 @@ static int match_known_vidpid(uint16_t vid, uint16_t pid,
         *out_vid = vid; *out_pid = pid;
         return 1;
     }
+    if (generic_hid_is_supported(vid, pid)) {
+        *out_vid = vid; *out_pid = pid;
+        return 1;
+    }
+
     if (gamecube_is_adapter(vid, pid)) {
         *out_vid = vid; *out_pid = pid;
         return 1;
@@ -1665,6 +1670,21 @@ main_loop: ;
             injected = ds4_handle_packet(fd, eps, buf, len, &pad);
         } else if (is_ds3) {
             injected = ds3_handle_packet(fd, eps, buf, len, &pad);
+        } else if (is_generic_hid) {
+            static int generic_logged[MAX_SLOTS] = {0,0,0,0};
+            if (!generic_logged[slot]) {
+                char hex[3 * 24 + 1];
+                size_t p = 0;
+                uint32_t dump_len = len < 24 ? len : 24;
+                for (uint32_t bi = 0; bi < dump_len && p + 3 < sizeof(hex); bi++)
+                    p += (size_t)snprintf(hex + p, sizeof(hex) - p, "%02x%s",
+                                          buf[bi], (bi + 1 < dump_len) ? " " : "");
+                hex[p] = '\0';
+                gp_log("slot[%d] generic HID first report len=%u data=%s\n",
+                       slot, (unsigned)len, hex);
+                generic_logged[slot] = 1;
+            }
+            injected = generic_hid_parse(vid, pid, buf, len, &pad);
         } else if (is_gamecube) {
             ScePadData gc_pad[GAMECUBE_ADAPTER_PORTS];
             int gc_present[GAMECUBE_ADAPTER_PORTS] = {0,0,0,0};
@@ -1983,6 +2003,7 @@ static void *controller_manager_thread(void *arg) {
             const char *name =
                 ds4_is_supported_vidpid(vid,pid) ? ds4_name(vid,pid) :
                 ds3_is_supported_vidpid(vid,pid) ? ds3_name() :
+                generic_hid_is_supported(vid,pid) ? generic_hid_name(vid,pid) :
                 gamecube_is_adapter(vid,pid) ? gamecube_name() :
                 mamba_is_supported_vidpid(vid,pid) ? mamba_name(vid,pid) :
                                                      "Unknown";
