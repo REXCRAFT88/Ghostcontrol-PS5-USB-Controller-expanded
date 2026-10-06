@@ -1,0 +1,21 @@
+name: Nintendo N64 controller tests
+
+on:
+  push:
+    branches:
+      - feature/n64-nso-usb
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  n64-profile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Run N64 profile tests
+        run: sh tests/run_n64_tests.sh
