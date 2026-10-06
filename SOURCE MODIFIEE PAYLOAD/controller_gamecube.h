@@ -26,6 +26,14 @@
 #define GAMECUBE_ADAPTER_INIT_CMD     0x13u
 #define GAMECUBE_ADAPTER_PORTS        4u
 
+/* Mayflash/EVORETRO/DragonRise PC-mode identities used by current SDL/Linux. */
+#define GAMECUBE_PC_VID                0x0079u
+#define GAMECUBE_PC_PID_1843           0x1843u
+#define GAMECUBE_PC_PID_1844           0x1844u
+#define GAMECUBE_PC_PID_1846           0x1846u
+
+int gamecube_is_nintendo_adapter(uint16_t vid, uint16_t pid);
+int gamecube_is_pc_adapter(uint16_t vid, uint16_t pid);
 int gamecube_is_adapter(uint16_t vid, uint16_t pid);
 const char *gamecube_name(void);
 
@@ -41,3 +49,20 @@ int gamecube_send_init(int fd, struct usb_fs_endpoint *eps);
  */
 int gamecube_parse_port(const uint8_t *buf, uint32_t len, unsigned port,
                         ScePadData *out_pad);
+
+/*
+ * Parse Mayflash/DragonRise PC-mode GameCube reports.
+ *
+ * Legacy firmware:
+ *   10 bytes total
+ *   byte 0 = controller slot (1..4)
+ *   bytes 1..9 = controller report
+ *
+ * Newer firmware (v0x7+):
+ *   9 bytes total
+ *   no slot prefix; one controller stream is exposed by the HID device
+ *
+ * out_port receives 0..3 for legacy reports and 0 for the 9-byte form.
+ */
+int gamecube_parse_pc_packet(const uint8_t *buf, uint32_t len,
+                             unsigned *out_port, ScePadData *out_pad);
