@@ -78,7 +78,8 @@ For the first 13.60 test:
 3. Launch `PoorDS4rc51.elf`.
 4. If no active notification appears, run `PoorDS4-status.elf`.
 5. Copy the complete `/data/poords4/` directory for analysis.
-6. Use `PoorDS4-stop.elf` before replacing/reinjecting another bridge build.
+6. Check `/data/poords4/fw-compat-last.txt` first. It gives a compact pass/fail breakdown of the structural firmware gate and source/game fingerprints without bypassing any check.
+7. Use `PoorDS4-stop.elf` before replacing/reinjecting another bridge build.
 
 Do not bypass structural rejection just to force 13.60 support. The rejection report is more useful than a blind hook.
 
