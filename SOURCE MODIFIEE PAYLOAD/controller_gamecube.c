@@ -70,9 +70,11 @@ int gamecube_parse_port(const uint8_t *buf, uint32_t len, unsigned port,
     out_pad->analogButtons.l2 = p[7];
     out_pad->analogButtons.r2 = p[8];
 
-    /* Treat meaningful analog trigger travel as L2/R2 even before hard-click. */
-    if (p[7] > 30u) out_pad->buttons |= SCE_PAD_BUTTON_L2;
-    if (p[8] > 30u) out_pad->buttons |= SCE_PAD_BUTTON_R2;
+    /*
+     * Do not synthesize the digital L2/R2 bits from analog travel here.
+     * The GameCube controller has a distinct hard-click at the end of each
+     * trigger; b2 preserves that click while analogButtons preserves travel.
+     */
 
     out_pad->connected = 1;
     out_pad->quat.w = 1.0f;
