@@ -1454,6 +1454,23 @@ main_loop: ;
                        slot, gc_primary_port + 1);
                 gc_primary_port = -1;
             }
+
+            /* Before the primary VDA is confirmed, let an actual button press
+             * take priority over an earlier idle/neutral port selection. */
+            if (!g_slots[slot].confirmed && gc_primary_port >= 0 &&
+                gc_present[gc_primary_port] &&
+                gc_pad[gc_primary_port].buttons == 0) {
+                for (unsigned p = 0; p < GAMECUBE_ADAPTER_PORTS; p++) {
+                    if ((int)p != gc_primary_port && gc_present[p] &&
+                        gc_pad[p].buttons != 0 && g_gc_aux_handle[p] < 0) {
+                        gp_log("slot[%d] GameCube primary moved port %d -> %u on activity\n",
+                               slot, gc_primary_port + 1, p + 1);
+                        gc_primary_port = (int)p;
+                        break;
+                    }
+                }
+            }
+
             if (gc_primary_port < 0) {
                 /* Prefer the port whose player is actively pressing a button,
                  * then fall back to the first connected unassigned port. */
