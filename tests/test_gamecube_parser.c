@@ -6,6 +6,7 @@
 #include "../SOURCE MODIFIEE PAYLOAD/controller_gamecube.h"
 #include "../SOURCE MODIFIEE PAYLOAD/usb_helpers.h"
 
+static uint8_t g_last_out[64];
 static uint8_t g_last_out_byte;
 static uint32_t g_last_out_len;
 static int g_out_calls;
@@ -17,6 +18,11 @@ int usb_send_out(int fd, struct usb_fs_endpoint *ep,
     g_out_calls++;
     g_last_out_len = len;
     g_last_out_byte = (data && len) ? data[0] : 0;
+    memset(g_last_out, 0, sizeof(g_last_out));
+    if (data && len) {
+        uint32_t n = len < sizeof(g_last_out) ? len : (uint32_t)sizeof(g_last_out);
+        memcpy(g_last_out, data, n);
+    }
     return 0;
 }
 
@@ -31,6 +37,38 @@ static void test_adapter_init_command(void) {
     assert(g_out_calls == 1);
     assert(g_last_out_len == 1);
     assert(g_last_out_byte == GAMECUBE_ADAPTER_INIT_CMD);
+}
+
+static void test_nintendo_rumble_packet(void) {
+    struct usb_fs_endpoint ep[2];
+    uint8_t state[GAMECUBE_ADAPTER_PORTS] = {0, 1, 7, 0};
+    memset(ep, 0, sizeof(ep));
+    g_out_calls = 0;
+    g_last_out_len = 0;
+    memset(g_last_out, 0, sizeof(g_last_out));
+
+    assert(gamecube_send_nintendo_rumble(-1, ep, state) == 0);
+    assert(g_out_calls == 1);
+    assert(g_last_out_len == 5);
+    assert(g_last_out[0] == GAMECUBE_ADAPTER_RUMBLE_CMD);
+    assert(g_last_out[1] == 0);
+    assert(g_last_out[2] == 1);
+    assert(g_last_out[3] == 1);
+    assert(g_last_out[4] == 0);
+}
+
+static void test_feedback_rumble_parse(void) {
+    uint8_t feedback[17] = {0};
+
+    assert(gamecube_feedback_wants_rumble(NULL, 0) == 0);
+    assert(gamecube_feedback_wants_rumble(feedback, 4) == 0);
+    assert(gamecube_feedback_wants_rumble(feedback, sizeof(feedback)) == 0);
+
+    feedback[3] = 1;
+    assert(gamecube_feedback_wants_rumble(feedback, sizeof(feedback)) == 1);
+    feedback[3] = 0;
+    feedback[4] = 0xff;
+    assert(gamecube_feedback_wants_rumble(feedback, sizeof(feedback)) == 1);
 }
 
 static void fill_port(uint8_t *report, unsigned port,
@@ -197,6 +235,8 @@ static void test_empty_port_and_invalid_report(void) {
 
 int main(void) {
     test_adapter_init_command();
+    test_nintendo_rumble_packet();
+    test_feedback_rumble_parse();
     assert(gamecube_is_adapter(0x057e, 0x0337));
     assert(gamecube_is_nintendo_adapter(0x057e, 0x0337));
     assert(gamecube_is_pc_adapter(0x0079, 0x1843));

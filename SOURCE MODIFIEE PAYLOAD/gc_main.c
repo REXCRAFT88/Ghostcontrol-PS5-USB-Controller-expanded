@@ -90,6 +90,8 @@ extern int32_t scePadGetHandle(int32_t userId, int32_t type, int32_t index);
 extern int32_t scePadVirtualDeviceAddDevice(void *param, int32_t deviceType);
 extern int32_t scePadVirtualDeviceDeleteDevice(int32_t handle);
 extern int32_t scePadVirtualDeviceInsertData(int32_t handle, const void *padData);
+extern int32_t scePadVirtualDeviceGetRemoteSetting(int32_t handle, void *setting)
+    __attribute__((weak));
 extern int32_t sceKernelSendNotificationRequest(int unk0, void *req, size_t size, int unk1);
 
 #define VIRTUAL_DEVICE_TYPE_DUALSENSE 3
@@ -1078,6 +1080,27 @@ static void inject_gamecube_aux(unsigned port, const ScePadData *pad) {
         scePadVirtualDeviceInsertData(handle, pad);
 }
 
+static uint64_t gamecube_now_ms(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (uint64_t)tv.tv_sec * 1000u + (uint64_t)tv.tv_usec / 1000u;
+}
+
+static int gamecube_read_vda_rumble(int32_t handle, uint8_t *out_on) {
+    if (!out_on || handle < 0 || !scePadVirtualDeviceGetRemoteSetting)
+        return -1;
+
+    uint8_t setting[256];
+    memset(setting, 0, sizeof(setting));
+    int32_t ret = scePadVirtualDeviceGetRemoteSetting(handle, setting);
+    if (ret != 0)
+        return ret;
+
+    *out_on = gamecube_feedback_wants_rumble(
+        setting, (uint32_t)sizeof(setting)) ? 1u : 0u;
+    return 0;
+}
+
 /* ── USB HID thread ───────────────────────────────────────────────────── */
 /* Single-session: receives slot+path+vid+pid, runs until disconnect, then exits.
  * Manager thread handles re-detection after exit. */
@@ -1109,6 +1132,9 @@ static void *usb_hid_thread(void *arg) {
     int usb_ready_notified = 0;
     int gc_primary_port = -1;
     int gc_port_seen[GAMECUBE_ADAPTER_PORTS] = {0,0,0,0};
+    uint8_t gc_rumble_state[GAMECUBE_ADAPTER_PORTS] = {0,0,0,0};
+    uint64_t gc_feedback_last_ms = 0;
+    int gc_feedback_api_logged = 0;
 
     gp_log("slot[%d] USB thread: %s VID=0x%04x PID=0x%04x\n",
            slot, dev_path, vid, pid);
@@ -1599,6 +1625,57 @@ main_loop: ;
             if (injected > 0 && is_mamba_switch)
                 pad.leftStick.y = (uint8_t)(255u - pad.leftStick.y);
         }
+        /*
+         * Nintendo/Wii-U adapter rumble.
+         * Read game-requested VDA feedback and collapse either DS4 motor to
+         * the GameCube adapter's binary rumble state. PC mode stays input-only
+         * until its raw PS5 output transport is hardware-verified.
+         */
+        if (is_gamecube && !is_gamecube_pc && out_opened) {
+            uint64_t now = gamecube_now_ms();
+            if (now - gc_feedback_last_ms >= 16u) {
+                gc_feedback_last_ms = now;
+
+                if (!scePadVirtualDeviceGetRemoteSetting) {
+                    if (!gc_feedback_api_logged) {
+                        gp_log("slot[%d] GameCube rumble unavailable: "
+                               "scePadVirtualDeviceGetRemoteSetting missing\n",
+                               slot);
+                        gc_feedback_api_logged = 1;
+                    }
+                } else {
+                    uint8_t next_rumble[GAMECUBE_ADAPTER_PORTS] = {0,0,0,0};
+
+                    for (unsigned p = 0;
+                         p < GAMECUBE_ADAPTER_PORTS; p++) {
+                        int32_t feedback_handle =
+                            ((int)p == gc_primary_port)
+                                ? g_slots[slot].handle
+                                : g_gc_aux_handle[p];
+
+                        uint8_t on = 0;
+                        if (feedback_handle >= 0 &&
+                            gamecube_read_vda_rumble(
+                                feedback_handle, &on) == 0)
+                            next_rumble[p] = on;
+                    }
+
+                    if (memcmp(next_rumble, gc_rumble_state,
+                               sizeof(gc_rumble_state)) != 0) {
+                        int rr = gamecube_send_nintendo_rumble(
+                            fd, eps, next_rumble);
+                        gp_log("slot[%d] GameCube rumble [%u %u %u %u] ret=%d\n",
+                               slot,
+                               next_rumble[0], next_rumble[1],
+                               next_rumble[2], next_rumble[3], rr);
+                        if (rr == 0)
+                            memcpy(gc_rumble_state, next_rumble,
+                                   sizeof(gc_rumble_state));
+                    }
+                }
+            }
+        }
+
 
         if (g_slots[slot].released_pause) {
             if (injected > 0) {
@@ -1662,6 +1739,11 @@ main_loop: ;
     }
 
 reinit:
+    if (gamecube_is_nintendo_adapter(vid, pid) && out_opened) {
+        uint8_t rumble_off[GAMECUBE_ADAPTER_PORTS] = {0,0,0,0};
+        (void)gamecube_send_nintendo_rumble(fd, eps, rumble_off);
+        memset(gc_rumble_state, 0, sizeof(gc_rumble_state));
+    }
     if (gamecube_is_adapter(vid, pid)) {
         for (unsigned p = 0; p < GAMECUBE_ADAPTER_PORTS; p++)
             destroy_gamecube_aux_vda(slot, p, "adapter reinit");

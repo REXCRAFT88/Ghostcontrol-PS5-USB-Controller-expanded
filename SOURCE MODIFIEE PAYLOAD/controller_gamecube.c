@@ -191,3 +191,22 @@ int gamecube_parse_pc_packet(const uint8_t *buf, uint32_t len,
         *out_port = port;
     return 1;
 }
+
+int gamecube_send_nintendo_rumble(int fd, struct usb_fs_endpoint *eps,
+                                  const uint8_t state[GAMECUBE_ADAPTER_PORTS]) {
+    if (!eps || !state)
+        return -1;
+
+    uint8_t packet[1u + GAMECUBE_ADAPTER_PORTS];
+    packet[0] = GAMECUBE_ADAPTER_RUMBLE_CMD;
+    for (unsigned i = 0; i < GAMECUBE_ADAPTER_PORTS; i++)
+        packet[1u + i] = state[i] ? 1u : 0u;
+
+    return usb_send_out(fd, &eps[1], packet, sizeof(packet), "gc-rumble");
+}
+
+int gamecube_feedback_wants_rumble(const uint8_t *buf, uint32_t len) {
+    if (!buf || len < 5u)
+        return 0;
+    return buf[3] != 0u || buf[4] != 0u;
+}
