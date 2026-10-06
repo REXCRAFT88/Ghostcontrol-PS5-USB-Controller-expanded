@@ -1132,6 +1132,9 @@ static void *usb_hid_thread(void *arg) {
     int usb_ready_notified = 0;
     int gc_primary_port = -1;
     int gc_port_seen[GAMECUBE_ADAPTER_PORTS] = {0,0,0,0};
+    GameCubeCalibration gc_calibration[GAMECUBE_ADAPTER_PORTS];
+    for (unsigned p = 0; p < GAMECUBE_ADAPTER_PORTS; p++)
+        gamecube_calibration_reset(&gc_calibration[p]);
     uint8_t gc_rumble_state[GAMECUBE_ADAPTER_PORTS] = {0,0,0,0};
     uint64_t gc_feedback_last_ms = 0;
     int gc_feedback_api_logged = 0;
@@ -1475,12 +1478,16 @@ main_loop: ;
                         buf, len, &pc_port, &pc_pad) > 0 &&
                     pc_port < GAMECUBE_ADAPTER_PORTS) {
                     if (!gc_port_seen[pc_port]) {
+                        gamecube_calibration_reset(&gc_calibration[pc_port]);
                         gc_port_seen[pc_port] = 1;
                         gp_log("slot[%d] GameCube PC physical port %u first report\n",
                                slot, pc_port + 1);
                         notify("Ghost-Control: GameCube PC port %u active",
                                pc_port + 1);
                     }
+
+                    gamecube_calibration_apply(
+                        &gc_calibration[pc_port], &pc_pad);
 
                     if (gc_primary_port < 0) {
                         gc_primary_port = (int)pc_port;
@@ -1528,6 +1535,7 @@ main_loop: ;
                         buf, len, p, &gc_pad[p]);
 
                     if (gc_present[p] && !gc_port_seen[p]) {
+                        gamecube_calibration_reset(&gc_calibration[p]);
                         gc_port_seen[p] = 1;
                         gp_log("slot[%d] GameCube physical port %u connected\n",
                                slot, p + 1);
@@ -1540,6 +1548,10 @@ main_loop: ;
                             destroy_gamecube_aux_vda(
                                 slot, p, "controller unplugged");
                     }
+
+                    if (gc_present[p])
+                        gamecube_calibration_apply(
+                            &gc_calibration[p], &gc_pad[p]);
                 }
 
                 if (gc_primary_port >= 0 &&

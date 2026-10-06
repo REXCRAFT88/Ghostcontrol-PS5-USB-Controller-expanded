@@ -202,6 +202,58 @@ static void test_pc_mode_v7_report(void) {
     assert(pad.analogButtons.r2 == 100);
 }
 
+static void test_gamecube_calibration(void) {
+    GameCubeCalibration cal;
+    ScePadData pad;
+
+    gamecube_calibration_reset(&cal);
+    memset(&pad, 0, sizeof(pad));
+
+    /* Expected SDL-style default physical range: 40..216. */
+    pad.leftStick.x = 40;
+    pad.leftStick.y = 128;
+    pad.rightStick.x = 216;
+    pad.rightStick.y = 128;
+    pad.analogButtons.l2 = 40;
+    pad.analogButtons.r2 = 216;
+
+    gamecube_calibration_apply(&cal, &pad);
+
+    assert(pad.leftStick.x == 0);
+    assert(pad.leftStick.y >= 127 && pad.leftStick.y <= 128);
+    assert(pad.rightStick.x == 255);
+    assert(pad.rightStick.y >= 127 && pad.rightStick.y <= 128);
+    assert(pad.analogButtons.l2 == 0);
+    assert(pad.analogButtons.r2 == 255);
+
+    /* Real hardware exceeding the initial assumptions expands that port's
+     * learned range instead of clipping permanently. */
+    memset(&pad, 0, sizeof(pad));
+    pad.leftStick.x = 20;
+    pad.leftStick.y = 235;
+    pad.rightStick.x = 10;
+    pad.rightStick.y = 240;
+    pad.analogButtons.l2 = 0;
+    pad.analogButtons.r2 = 240;
+
+    gamecube_calibration_apply(&cal, &pad);
+
+    assert(pad.leftStick.x == 0);
+    assert(pad.leftStick.y == 255);
+    assert(pad.rightStick.x == 0);
+    assert(pad.rightStick.y == 255);
+    assert(pad.analogButtons.l2 == 0);
+    assert(pad.analogButtons.r2 == 255);
+
+    /* Learned extrema persist independently in the calibration object. */
+    assert(cal.min_axis[0] == 20);
+    assert(cal.max_axis[1] == 235);
+    assert(cal.min_axis[2] == 10);
+    assert(cal.max_axis[3] == 240);
+    assert(cal.min_axis[4] == 0);
+    assert(cal.max_axis[5] == 240);
+}
+
 static void test_pc_mode_rejections(void) {
     uint8_t bad_slot[10] = {0};
     uint8_t bad_len[8] = {0};
@@ -246,6 +298,7 @@ int main(void) {
     assert(!gamecube_is_pc_adapter(0x0079, 0x1847));
     assert(!gamecube_is_adapter(0x057e, 0x2009));
 
+    test_gamecube_calibration();
     test_pc_mode_legacy_report();
     test_pc_mode_v7_report();
     test_pc_mode_rejections();
