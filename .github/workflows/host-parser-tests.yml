@@ -34,3 +34,6 @@ jobs:
 
       - name: Compile Bluetooth probe Prospero path
         run: sh tests/run_sony_bt_probe_prospero_build_test.sh
+
+      - name: Run Bluetooth HCI stream tests
+        run: sh tests/run_sony_bt_stream_tests.sh
