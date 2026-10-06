@@ -13,6 +13,8 @@ $main = [IO.File]::ReadAllText(
     (Join-Path $repo 'game_pad_bridge_main.c'))
 $bridge = [IO.File]::ReadAllText(
     (Join-Path $repo 'wireless_ds4.c'))
+$statusMain = [IO.File]::ReadAllText(
+    (Join-Path $repo 'game_pad_bridge_status_main.c'))
 $makefile = [IO.File]::ReadAllText(
     (Join-Path $repo 'Makefile'))
 
