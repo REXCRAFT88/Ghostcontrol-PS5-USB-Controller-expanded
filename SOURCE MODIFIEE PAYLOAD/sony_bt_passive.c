@@ -1,3 +1,7 @@
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE 1
+#endif
+
 #include "sony_bt_passive.h"
 #include "sony_bt_stream.h"
 
