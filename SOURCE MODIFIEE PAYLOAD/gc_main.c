@@ -982,11 +982,19 @@ static int32_t create_vda_for_slot(int slot) {
             gp_log("slot[%d] no Open Pad remote handle for dev=0x%llx\n",
                    slot, (unsigned long long)dev_id);
         }
-        handle = (int32_t)(dev_id & 0xffffffffu);
-        gp_log("slot[%d] using local VDA handle=0x%x for VDI\n",
-               slot, (uint32_t)handle);
-        if (is_mamba)
+        if (is_mamba) {
+            handle = (int32_t)(dev_id & 0xffffffffu);
+            gp_log("slot[%d] Manba local VDA token=0x%x for VDI\n",
+                   slot, (uint32_t)handle);
             maybe_disconnect_physical_pad_for_slot(slot);
+        } else if (open_handle >= 0) {
+            handle = open_handle;
+            gp_log("slot[%d] non-Manba using Open Pad handle=0x%x for VDI\n",
+                   slot, (uint32_t)handle);
+        } else {
+            gp_log("slot[%d] non-Manba retaining VDA-return handle=0x%x\n",
+                   slot, (uint32_t)handle);
+        }
     } else if (handle >= 0) {
         gp_log("slot[%d] klog timeout — using direct handle %d\n", slot, handle);
     } else {
