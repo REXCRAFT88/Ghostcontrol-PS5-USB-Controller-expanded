@@ -1,0 +1,21 @@
+name: GameCube host tests
+
+on:
+  push:
+    branches:
+      - "feature/gamecube-*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gamecube-parser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Run GameCube adapter parser tests
+        run: sh tests/run_gamecube_tests.sh
