@@ -192,7 +192,8 @@ $expectedVendoredFiles = @(
     'stop_game_pad_bridge_main.c',
     'wireless_ds4.c',
     'wireless_ds4.h',
-    'tests/static-audit.ps1'
+    'tests/static-audit.ps1',
+    'collect_13x_evidence_main.c'
 )
 foreach ($path in $expectedVendoredFiles) {
     Assert-True (Test-Path (Join-Path $repo $path)) `
@@ -200,3 +201,12 @@ foreach ($path in $expectedVendoredFiles) {
 }
 
 Write-Output 'PoorDS4 vendored static audit passed.'
+
+$collector = [IO.File]::ReadAllText(
+    (Join-Path $repo 'collect_13x_evidence_main.c'))
+Assert-True ($collector.Contains('/data/poords4/13x-evidence.txt')) `
+    '13.x evidence collector output path is missing.'
+Assert-True (-not $collector.Contains('ptrace')) `
+    'Evidence collector must remain file-only and not use ptrace.'
+Assert-True (-not $collector.Contains('kernel_set_')) `
+    'Evidence collector must not modify kernel/process credentials.'
