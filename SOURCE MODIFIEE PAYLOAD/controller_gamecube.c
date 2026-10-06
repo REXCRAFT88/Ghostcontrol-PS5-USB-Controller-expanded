@@ -1,6 +1,11 @@
 #include "controller_gamecube.h"
 #include "usb_helpers.h"
 #include <string.h>
+#include <sys/ioctl.h>
+
+#ifdef __PROSPERO__
+#include <dev/usb/usb_endian.h>
+#endif
 
 int gamecube_is_adapter(uint16_t vid, uint16_t pid) {
     return vid == GAMECUBE_ADAPTER_VID && pid == GAMECUBE_ADAPTER_PID;
@@ -11,6 +16,26 @@ const char *gamecube_name(void) {
 }
 
 int gamecube_send_init(int fd, struct usb_fs_endpoint *eps) {
+#ifdef __PROSPERO__
+    /*
+     * Dolphin sends this class/interface request because some Nyko/off-brand
+     * adapters need it before they begin behaving like the Wii U adapter.
+     * Mayflash Wii U mode can return a pipe/stall here and still work, so this
+     * compatibility request is intentionally non-fatal.
+     */
+    struct usb_ctl_request req;
+    memset(&req, 0, sizeof(req));
+    req.ucr_request.bmRequestType = 0x21;
+    req.ucr_request.bRequest = 11;
+    USETW(req.ucr_request.wValue, 0x0001);
+    USETW(req.ucr_request.wIndex, 0x0000);
+    USETW(req.ucr_request.wLength, 0x0000);
+    req.ucr_data = NULL;
+    (void)ioctl(fd, USB_DO_REQUEST, &req);
+#else
+    (void)fd;
+#endif
+
     const uint8_t cmd = GAMECUBE_ADAPTER_INIT_CMD;
     return usb_send_out(fd, &eps[1], &cmd, 1, "gc-init");
 }
