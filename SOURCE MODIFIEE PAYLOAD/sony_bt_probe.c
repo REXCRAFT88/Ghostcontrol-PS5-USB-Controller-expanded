@@ -121,8 +121,9 @@ static int probe_one_readonly(const char *path, SonyBtRadioProbe *out) {
         return 0;
     }
 
+    const uint32_t actlen = gd.ugd_actlen > 0 ? (uint32_t)gd.ugd_actlen : 0u;
     const uint32_t actual =
-        gd.ugd_actlen < sizeof(cfg) ? (uint32_t)gd.ugd_actlen : (uint32_t)sizeof(cfg);
+        actlen < (uint32_t)sizeof(cfg) ? actlen : (uint32_t)sizeof(cfg);
 
     SonyBtHciFunction funcs[SONY_BT_HCI_FUNCTIONS_MAX];
     memset(funcs, 0, sizeof(funcs));
@@ -164,7 +165,14 @@ int sony_bt_probe_radios_readonly(SonyBtRadioProbe *out, unsigned out_cap) {
             continue;
 
         char path[32];
-        snprintf(path, sizeof(path), "/dev/%s", ent->d_name);
+        static const char dev_prefix[] = "/dev/";
+        const size_t name_len = strlen(ent->d_name);
+
+        if (name_len + sizeof(dev_prefix) > sizeof(path))
+            continue;
+
+        memcpy(path, dev_prefix, sizeof(dev_prefix) - 1u);
+        memcpy(path + sizeof(dev_prefix) - 1u, ent->d_name, name_len + 1u);
 
         if (probe_one_readonly(path, &out[count]))
             count++;
