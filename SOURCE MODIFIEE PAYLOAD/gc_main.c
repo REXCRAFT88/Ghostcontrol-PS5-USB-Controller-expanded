@@ -1563,6 +1563,7 @@ static void *usb_hid_thread(void *arg) {
 main_loop: ;
     int is_ds4 = ds4_is_supported_vidpid(vid, pid);
     int is_ds3 = ds3_is_supported_vidpid(vid, pid);
+    int is_generic_hid = generic_hid_is_supported(vid, pid);
     int is_gamecube = gamecube_is_adapter(vid, pid);
     int is_mamba_xinput = mamba_is_xinput_vidpid(vid, pid);
     int is_mamba_switch = mamba_is_switch_vidpid(vid, pid);
@@ -2117,8 +2118,8 @@ int main(void) {
     int32_t userId=-1, fgUser=-1; int ret;
 
     ghostpad_status_log_reset();
-    gp_log("GhostControl Expanded v0.1.0-beta starting - %d slots\n", MAX_SLOTS);
-    notify("GhostControl Expanded v0.1.0-beta");
+    gp_log("GhostControl Expanded v0.1.4-beta starting - %d slots\n", MAX_SLOTS);
+    notify("GhostControl Expanded v0.1.4-beta");
 
     /* Kill previous instance */
     { int pfd=open(PID_PATH,O_RDONLY);
