@@ -7,8 +7,21 @@
 #include <dev/usb/usb_endian.h>
 #endif
 
-int gamecube_is_adapter(uint16_t vid, uint16_t pid) {
+int gamecube_is_nintendo_adapter(uint16_t vid, uint16_t pid) {
     return vid == GAMECUBE_ADAPTER_VID && pid == GAMECUBE_ADAPTER_PID;
+}
+
+int gamecube_is_pc_adapter(uint16_t vid, uint16_t pid) {
+    if (vid != GAMECUBE_PC_VID)
+        return 0;
+    return pid == GAMECUBE_PC_PID_1843 ||
+           pid == GAMECUBE_PC_PID_1844 ||
+           pid == GAMECUBE_PC_PID_1846;
+}
+
+int gamecube_is_adapter(uint16_t vid, uint16_t pid) {
+    return gamecube_is_nintendo_adapter(vid, pid) ||
+           gamecube_is_pc_adapter(vid, pid);
 }
 
 const char *gamecube_name(void) {
@@ -103,5 +116,78 @@ int gamecube_parse_port(const uint8_t *buf, uint32_t len, unsigned port,
 
     out_pad->connected = 1;
     out_pad->quat.w = 1.0f;
+    return 1;
+}
+
+int gamecube_parse_pc_packet(const uint8_t *buf, uint32_t len,
+                             unsigned *out_port, ScePadData *out_pad) {
+    if (!buf || !out_pad)
+        return 0;
+
+    const uint8_t *p = NULL;
+    unsigned port = 0;
+    int invert_c_stick = 0;
+
+    if (len == 10u) {
+        /* Older firmware: first byte identifies controller 1..4. */
+        if (buf[0] < 1u || buf[0] > GAMECUBE_ADAPTER_PORTS)
+            return 0;
+        port = (unsigned)(buf[0] - 1u);
+        p = &buf[1];
+        invert_c_stick = 1;
+    } else if (len == 9u) {
+        /* Firmware v0x7+: one controller stream, no explicit port byte. */
+        port = 0;
+        p = buf;
+        invert_c_stick = 0;
+    } else {
+        return 0;
+    }
+
+    uint32_t buttons = 0;
+
+    /* Face buttons. SDL's HIDAPI GameCube driver documents this PC layout. */
+    if (p[0] & 0x02u) buttons |= SCE_PAD_BUTTON_CROSS;     /* A */
+    if (p[0] & 0x04u) buttons |= SCE_PAD_BUTTON_CIRCLE;    /* B */
+    if (p[0] & 0x01u) buttons |= SCE_PAD_BUTTON_SQUARE;    /* X */
+    if (p[0] & 0x08u) buttons |= SCE_PAD_BUTTON_TRIANGLE;  /* Y */
+
+    /* D-pad + Start. */
+    if (p[1] & 0x80u) buttons |= SCE_PAD_BUTTON_LEFT;
+    if (p[1] & 0x20u) buttons |= SCE_PAD_BUTTON_RIGHT;
+    if (p[1] & 0x40u) buttons |= SCE_PAD_BUTTON_DOWN;
+    if (p[1] & 0x10u) buttons |= SCE_PAD_BUTTON_UP;
+    if (p[1] & 0x02u) buttons |= SCE_PAD_BUTTON_OPTIONS;
+
+    /* Z + physical L/R trigger clicks. */
+    if (p[0] & 0x80u) buttons |= SCE_PAD_BUTTON_R1; /* Z */
+    if (p[0] & 0x20u) buttons |= SCE_PAD_BUTTON_R2; /* R click */
+    if (p[0] & 0x10u) buttons |= SCE_PAD_BUTTON_L2; /* L click */
+
+    memset(out_pad, 0, sizeof(*out_pad));
+    out_pad->buttons = buttons;
+
+    out_pad->leftStick.x = p[2];
+    out_pad->leftStick.y = (uint8_t)(255u - p[3]);
+
+    /*
+     * Legacy PC firmware exposes the C-stick in the opposite orientation
+     * from the v0x7+ report. Keep this transport quirk local to the parser.
+     */
+    if (invert_c_stick) {
+        out_pad->rightStick.x = (uint8_t)(255u - p[5]);
+        out_pad->rightStick.y = p[4];
+    } else {
+        out_pad->rightStick.x = p[5];
+        out_pad->rightStick.y = (uint8_t)(255u - p[4]);
+    }
+
+    out_pad->analogButtons.l2 = p[6];
+    out_pad->analogButtons.r2 = p[7];
+    out_pad->connected = 1;
+    out_pad->quat.w = 1.0f;
+
+    if (out_port)
+        *out_port = port;
     return 1;
 }
