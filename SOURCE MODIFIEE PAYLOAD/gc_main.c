@@ -997,6 +997,7 @@ done:
 static int create_shellcore_bridge_for_slot(int slot) {
     pid_t pid = -1;
     intptr_t args = 0;
+    uint64_t dev_id = 0;
     int ret = shellui_pad_inject(g_inject_uid, 1,
                                  VIRTUAL_DEVICE_TYPE_DUALSENSE,
                                  &pid, &args);
@@ -1005,11 +1006,60 @@ static int create_shellcore_bridge_for_slot(int slot) {
     if (ret != 0 || pid <= 0 || args == 0)
         return -1;
 
+    pthread_mutex_lock(&g_slot_lock);
+    g_slots[slot].bridge_active = 1;
+    g_slots[slot].bridge_pid = pid;
+    g_slots[slot].bridge_args = args;
+    g_slots[slot].handle = 1 + slot;
+    g_slots[slot].vdi_ready = 0;
+    pthread_mutex_unlock(&g_slot_lock);
+
+    dev_id = klog_dequeue_ms(5000);
+    if (!dev_id) {
+        gp_log("slot[%d] ShellCore bridge: no VDA device id from klog\n", slot);
+        shellui_pad_stop(pid, args);
+        pthread_mutex_lock(&g_slot_lock);
+        g_slots[slot].bridge_active = 0;
+        g_slots[slot].bridge_pid = -1;
+        g_slots[slot].bridge_args = 0;
+        g_slots[slot].handle = -1;
+        pthread_mutex_unlock(&g_slot_lock);
+        return -1;
+    }
+
+    g_slots[slot].virtual_dev_id = dev_id;
+    remember_virtual_device_id(dev_id);
+    {
+        int br = shellui_pad_force_bind(dev_id, g_inject_uid);
+        gp_log("slot[%d] ShellCore bridge force_bind(0x%llx,0x%08x) ret=%d\n",
+               slot, (unsigned long long)dev_id, (uint32_t)g_inject_uid, br);
+    }
+
+    {
+        int32_t open_handle = klog_wait_open_pad_handle(dev_id, 3000);
+        if (open_handle >= 0)
+            gp_log("slot[%d] ShellCore bridge SceShellUI Open Pad handle=0x%x dev=0x%llx\n",
+                   slot, (uint32_t)open_handle, (unsigned long long)dev_id);
+        else
+            gp_log("slot[%d] ShellCore bridge: no SceShellUI Open Pad handle yet dev=0x%llx\n",
+                   slot, (unsigned long long)dev_id);
+    }
+
     {
         int32_t remote_handle = -1;
-        if (shellui_pad_wait_ready(pid, args, 65000, &remote_handle) != 0) {
-            gp_log("slot[%d] ShellCore bridge never became ready; stopping\n", slot);
+        if (shellui_pad_wait_ready(pid, args, 12000, &remote_handle) != 0) {
+            gp_log("slot[%d] ShellCore bridge never became ready; disconnecting virtual dev=0x%llx\n",
+                   slot, (unsigned long long)dev_id);
             shellui_pad_stop(pid, args);
+            shellui_pad_disconnect_device(dev_id);
+            pthread_mutex_lock(&g_slot_lock);
+            g_slots[slot].bridge_active = 0;
+            g_slots[slot].bridge_pid = -1;
+            g_slots[slot].bridge_args = 0;
+            g_slots[slot].virtual_dev_id = 0;
+            g_slots[slot].handle = -1;
+            g_slots[slot].vdi_ready = 0;
+            pthread_mutex_unlock(&g_slot_lock);
             return -1;
         }
         gp_log("slot[%d] ShellCore bridge ready remote_handle=0x%x\n",
@@ -1017,10 +1067,6 @@ static int create_shellcore_bridge_for_slot(int slot) {
     }
 
     pthread_mutex_lock(&g_slot_lock);
-    g_slots[slot].bridge_active = 1;
-    g_slots[slot].bridge_pid = pid;
-    g_slots[slot].bridge_args = args;
-    g_slots[slot].handle = 1 + slot;
     g_slots[slot].vdi_ready = 1;
     pthread_mutex_unlock(&g_slot_lock);
     return 0;
@@ -1813,15 +1859,22 @@ exit_slot:
     gp_log("slot[%d] USB thread exiting — freeing slot\n", slot);
     uint64_t evicted_phys = g_slots[slot].evicted_physical_dev;
     uint64_t vdev = g_slots[slot].virtual_dev_id;
-    if (vdev) {
-        int vdr = shellui_pad_disconnect_device(vdev);
-        gp_log("slot[%d] disconnect virtual dev=0x%llx ret=%d\n",
-               slot, (unsigned long long)vdev, vdr);
-    }
-    if (g_slots[slot].bridge_active)
+    if (g_slots[slot].bridge_active) {
         stop_shellcore_bridge_for_slot(slot, "USB thread exit");
-    else if (g_slots[slot].handle >= 0)
-        scePadVirtualDeviceDeleteDevice(g_slots[slot].handle);
+        if (vdev) {
+            int vdr = shellui_pad_disconnect_device(vdev);
+            gp_log("slot[%d] disconnect bridge virtual dev=0x%llx ret=%d\n",
+                   slot, (unsigned long long)vdev, vdr);
+        }
+    } else {
+        if (vdev) {
+            int vdr = shellui_pad_disconnect_device(vdev);
+            gp_log("slot[%d] disconnect virtual dev=0x%llx ret=%d\n",
+                   slot, (unsigned long long)vdev, vdr);
+        }
+        if (g_slots[slot].handle >= 0)
+            scePadVirtualDeviceDeleteDevice(g_slots[slot].handle);
+    }
     pthread_mutex_lock(&g_slot_lock);
     g_slots[slot].handle    = -1;
     g_slots[slot].vdi_ready = 0;
@@ -2106,10 +2159,13 @@ static void cleanup_and_exit(int sig) {
             close(fd);
             g_slots[s].usb_fd = -1;
         }
-        if (g_slots[s].bridge_active)
+        if (g_slots[s].bridge_active) {
             shellui_pad_stop(g_slots[s].bridge_pid, g_slots[s].bridge_args);
-        else if (g_slots[s].handle >= 0)
+            if (g_slots[s].virtual_dev_id)
+                shellui_pad_disconnect_device(g_slots[s].virtual_dev_id);
+        } else if (g_slots[s].handle >= 0) {
             scePadVirtualDeviceDeleteDevice(g_slots[s].handle);
+        }
     }
     _exit(0);
 }
