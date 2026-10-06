@@ -1928,6 +1928,37 @@ shellui_pad_update(pid_t shellui_pid, intptr_t args_kaddr,
 }
 
 int
+shellui_pad_stop(pid_t shellui_pid, intptr_t args_kaddr)
+{
+    int32_t stop = 1;
+    intptr_t stop_field = args_kaddr + (intptr_t)offsetof(ShellUiPadArgs, stop);
+    pid_t mypid = getpid();
+    uint64_t saved_au = kernel_get_ucred_authid(mypid);
+    int ret;
+
+    if (shellui_pid <= 0 || args_kaddr == 0)
+        return -1;
+
+    if (saved_au)
+        kernel_set_ucred_authid(mypid, 0x4800000000010003l);
+    ret = mdbg_copyin(shellui_pid, &stop, stop_field, sizeof(stop));
+    if (saved_au)
+        kernel_set_ucred_authid(mypid, saved_au);
+
+    if (ret != 0) {
+        if (sys_ptrace(PT_ATTACH, shellui_pid, 0, 0) != 0)
+            return -1;
+        waitpid(shellui_pid, NULL, 0);
+        ret = pt_io_write(shellui_pid, stop_field, &stop, sizeof(stop));
+        sys_ptrace(PT_DETACH, shellui_pid, (caddr_t)1, 0);
+    }
+
+    klog_printf("[Ghostpad] bridge stop pid=%d args=0x%lx ret=%d\n",
+                shellui_pid, (unsigned long)args_kaddr, ret);
+    return ret == 0 ? 0 : -1;
+}
+
+int
 shellui_pad_direct_usable(pid_t shellui_pid, intptr_t args_kaddr)
 {
     return shellui_pad_direct_context_usable(shellui_pid, args_kaddr) &&
