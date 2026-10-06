@@ -24,6 +24,7 @@
 #define GAMECUBE_ADAPTER_REPORT_ID    0x21u
 #define GAMECUBE_ADAPTER_REPORT_SIZE  37u
 #define GAMECUBE_ADAPTER_INIT_CMD     0x13u
+#define GAMECUBE_ADAPTER_RUMBLE_CMD   0x11u
 #define GAMECUBE_ADAPTER_PORTS        4u
 
 /* Mayflash/EVORETRO/DragonRise PC-mode identities used by current SDL/Linux. */
@@ -66,3 +67,13 @@ int gamecube_parse_port(const uint8_t *buf, uint32_t len, unsigned port,
  */
 int gamecube_parse_pc_packet(const uint8_t *buf, uint32_t len,
                              unsigned *out_port, ScePadData *out_pad);
+
+/* Send Nintendo/Wii-U adapter rumble state for ports 1..4.
+ * Each state byte is normalized to 0 (off) or 1 (on). */
+int gamecube_send_nintendo_rumble(int fd, struct usb_fs_endpoint *eps,
+                                  const uint8_t state[GAMECUBE_ADAPTER_PORTS]);
+
+/* Parse VDA remote-setting bytes into a simple GameCube rumble request.
+ * The observed DS4-style layout stores small/large motor intensity at [3]/[4].
+ * Returns 1 when either motor is non-zero, otherwise 0. */
+int gamecube_feedback_wants_rumble(const uint8_t *buf, uint32_t len);
