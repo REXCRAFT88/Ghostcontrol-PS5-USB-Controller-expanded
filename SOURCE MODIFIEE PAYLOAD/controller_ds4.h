@@ -53,7 +53,10 @@
 #define DS4_EP_OUT    0x03
 #define DS4_EP_OUT_ALT 0x02
 
-/* Parse DS4 USB report (report ID 0x01) → ScePadData.
+int ds4_is_supported_vidpid(uint16_t vid, uint16_t pid);
+const char *ds4_name(uint16_t vid, uint16_t pid);
+
+ /* Parse DS4 USB report (report ID 0x01) → ScePadData.
  * buf MUST be at least 10 bytes. */
 void ds4_parse_input(const uint8_t *buf, ScePadData *out_pad);
 

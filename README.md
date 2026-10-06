@@ -1,258 +1,168 @@
-# Patch USB Ghost-Control Manba V2 pour Ghost control / StonedModder
+# GhostControl Expanded
 
+GhostControl Expanded is a PS5 controller-compatibility payload for jailbroken consoles. The primary goal is **GameCube controller support through USB GameCube adapters**, with expanded wired Sony-controller support and an optional wireless DualShock 4 backend.
 
+**Release:** v0.1.0-beta  
+**Primary test target:** PS5 firmware 13.60  
+**Primary hardware target:** Nintendo-compatible GameCube USB adapters
 
-La base reste celle de Ghost-Control de StonedModder : lire une manette USB supportee, traduire
-ses rapports d'input, creer une manette virtuelle PS5, puis injecter des
-`ScePadData`.
+## Release components
 
-Le travail ajoute ici concerne surtout :
-
-- le support Manba V2 en USB ;
-- le mode Manba PC/XInput ;
-- le mode Manba Switch USB/dongle ;
-- la correction de l'axe Y en mode Switch Manba ;
-- le comportement propre entre la Manba et la manette officielle quand elles
-  essayent de prendre le meme user ;
-- Un peu de notes de recherche Bluetooth separees, car le Bluetooth n'est pas resolu
-  dans cette ELF, encore en recherche...
-
-## Credits
-
-- Projet/tool original : StonedModder,
-  `Ghostcontrol-PS5-USB-Controller-Patcher`
-  - https://github.com/StonedModder/Ghostcontrol-PS5-USB-Controller-Patcher
-- Tests Manba V2 NBJr USB, validation PS5, verification des axes, tests
-  changement user et tests Manba/officielle .
-- PS5 SDK John tromblom 
-
-## Contenu Du Dossier
+### GhostControl-Expanded.elf
+The main payload detects supported USB controllers, translates their reports into PS5 `ScePadData`, creates virtual DualSense devices, handles hotplug/reconnect, and logs to:
 
 ```text
-ELF/
-  GhostControl-Cleanup.elf
-  GhostControl-ManbaV2-NBJr-USB-Patch.elf
-
-SOURCE MODIFIEE PAYLOAD/
-  Sources modifiees utilisees pour compiler la payload finale testee OK
-
-Launch-GhostControl-ManbaV2-NBJr.bat
-Launch-GhostControl-ManbaV2-NBJr.ps1
-
+/data/ghostpad/gc_status.log
+/data/ghostpad/gc_main.pid
 ```
 
-## Ce Qui Fonctionne En USB
+### GhostControl-Stop.elf
+Stops a running GhostControl instance through its PID file so the main payload can release USB endpoints and virtual pads cleanly.
 
-- Manba V2 en mode PC/XInput USB.
-- Manba V2 en mode Switch USB/dongle.
-- Correction de l'axe Y en mode Switch Manba dans `payload/gc_main.c`.
-- Quand la Manba devient active, la manette officielle se deconnectee proprement.
-- Si la manette officielle est rallumee sur un autre user, les deux manettes
-  peuvent rester actives pour jouer a deux.
-- Si la manette officielle est rallumee sur le meme user que la Manba, la VDA
-  Manba est liberee et l'officielle reprend la main.
+### Optional wireless DS4 backend
+`WIRELESS DS4 POORDS4/` contains an isolated PoorDS4-derived backend. The PS5 pairs and owns the DS4 normally; the bridge validates the running firmware/game layout and forwards DS4 state into native PS5 games. It fails closed if structural checks do not pass.
 
-## Recherche Bluetooth
-
-Pendant des tests, la PS5 voyait bien la partie Bluetooth de la Manba, mais elle
-se comportait comme un accessoire, pas comme une vraie manette `scePad`
-utilisable. La popup profil/user pouvait parfois s'ouvrir, et la console pouvait
-afficher deux manettes/accessoires, mais le chemin Bluetooth Manba ne donnait
-pas un flux d'input stable
-
-Points vus pendant les tests :
-
-- Le transport Bluetooth etait visible comme device MediaTek :
+For firmware 13.60 it also includes `PoorDS4-evidence.elf`, which creates:
 
 ```text
-/dev/ugen0.2
-VID:PID 0x0e8d:0x3603
-manufacturer="MediaTek Inc."
-product="Wireless_Device"
-class=0xe0 sub=0x01 proto=0x01
+/data/poords4/13x-evidence.txt
 ```
 
-- Ce device MediaTek indique le transport/adaptateur Bluetooth, pas les boutons
-  de la manette.
-- Le mode receiver/update de la Manba a aussi ete vu en `1a34:f517`.
-- D'autres devices comme Realtek `0x0bda:0x9210` sont du bruit USB/adaptateur et
-  ne doivent pas etre pris pour une manette.
-- En USB, la payload a un vrai device `/dev/ugen*` et de vrais reports input sur
-  l'endpoint `0x81`.
-- En Bluetooth, on n'a pas obtenu le meme chemin de reports input lisibles.
-- La manette officielle devient une vraie manette avec handles `scePad` et user.
-- La Manba Bluetooth est restee sur un chemin accessoire, pas un pad `scePad`
-  fiable.
+## Controller support
 
-Endroits recherches  :
+| Controller / adapter | Status |
+|---|---|
+| Nintendo GameCube adapter protocol (`057e:0337`) | Implemented; host-tested; PS5 hardware validation pending |
+| GameCube ports 1-4 | Multi-port routing implemented; experimental until real hardware validation |
+| GameCube analog L/R triggers | Preserved as analog L2/R2 |
+| WaveBird through standard adapter | Expected; hardware validation pending |
+| Mayflash/clone in Wii U/Switch mode | Expected when it enumerates as `057e:0337` |
+| DualShock 4 USB | Implemented; parser-tested |
+| DualShock 3 / Sixaxis USB | Implemented; parser-tested |
+| DualShock 4 Bluetooth | Optional PoorDS4 backend; 13.60 validation pending |
+| Manba V2 USB/XInput/Switch mode | Retained from the original fork |
+| Generic N64 USB adapters | Planned |
+| Switch Online N64 controller | Planned |
+| Generic USB HID gamepads | Planned |
+| DualShock 3 Bluetooth | Research / not release-ready |
+| Xbox One / Series USB | Inherited code exists; not claimed as validated in this beta |
+| Generic Switch Pro | Inherited parser exists; not claimed as validated in this beta |
 
-- scan `/dev/ugen*` ;
-- descriptors USB ;
-- endpoints USB ;
-- lignes klog `Open Pad` ;
-- lignes klog `DEVICE_ADDED` ;
-- ids MBus physiques finissant par `0x0300` ;
-- ids virtuels crees par la payload ;
-- `scePadInit` ;
-- `scePadGetHandle` ;
-- `scePadVirtualDeviceAddDevice` ;
-- `scePadVirtualDeviceInsertData` ;
-- `scePadVirtualDeviceDeleteDevice` ;
-- `scePadSetProcessPrivilege` ;
-- `SceShellUI` ;
-- `SceShellCore` ;
-- `libScePad` ;
-- `libSceMbus` ;
-- `sceMbusDisconnectDevice` ;
-- `sceMbusBindDeviceWithUserId`.
+See [Supported Controllers](docs/SUPPORTED_CONTROLLERS.md).
 
-Ce qui a servi dans le patch USB final :
+## GameCube mapping
 
-- deconnexion/liberation de la manette officielle physique ;
-- detection quand l'officielle reprend le meme user ;
-- liberation de la VDA Manba quand l'officielle reprend ce user.
+| GameCube | PS5 virtual input |
+|---|---|
+| A | Cross |
+| B | Circle |
+| X | Square |
+| Y | Triangle |
+| Start | Options |
+| Z | R1 |
+| L analog | L2 analog |
+| R analog | R2 analog |
+| L hard click | L2 digital |
+| R hard click | R2 digital |
+| Main stick | Left stick |
+| C-stick | Right stick |
+| D-pad | D-pad |
 
-Ce qui n'est pas resolu :
-
-- binder la Manba Bluetooth comme vraie manette ;
-- lire de vrais reports input Bluetooth Manba ;
-- assigner la Manba Bluetooth a un user comme une manette `scePad` normale.
-
- La Manba BT est vue par la PS5, mais elle reste bloquee avant le
-chemin input jeu.
-
-Points trouves :
-
-- Adresse BT Manba confirmee :
-  - normale : `98:b6:ea:bd:cd:58`
-  - reverse en memoire : `58 cd bd ea b6 98`
-- Dans `SceSysCore` / `SceMbusKmodEventPolling`, un event Manba a ete retrouve :
-  - hit Manba reverse autour de `+0x1ff30`
-  - debut event estime autour de `+0x1ff10`
-  - signature event : `0x08 / 0x04 / 0x03`
-  - `manba_hits_total=1`
-  - `manba_hits_heap=0`
-- Dans `SceMbusHeap`, la DualSense officielle apparait avec son BT et son
-  VID/PID, mais la Manba n'a pas d'entree pad equivalente.
-- La comparaison event officielle vs event Manba montre que l'event officiel
-  porte BT + VID/PID ensemble, alors que l'event Manba porte la MAC mais pas de
-  VID/PID Manba proche. Cela pointe vers un probleme de classification/promotion
-  accessoire vers pad, pas vers un simple patch d'adresse.
-- Les essais , et les tests
-  `KMOD_TO_HEAP … ont confirme que ces pistes ne suffisent pas :
-  - patch VID/PID ShellUI seul ;
-  - patch SIG8 ShellUI ;
-  - bind direct `0x190300` ;
-  - bind direct `0x30300` ;
-  - force `0x2030e` comme pad ;
-  - fallback `0x2030e -> 0x190300` ;
-  - activation table ShellUI `active20/user24/type28` avec ou sans user ;
-  - scans simples `/dev/hid` et `/dev/bluetooth_hid`.
-- Les tests  jeu montrent que `eboot.bin` a sa propre table `libScePad` :
-  l'officielle y est active, mais la Manba BT reste cote Shell/Cdlg/accessoire.
-- Le jeu appelle `scePadRead`.
-  ...
-
-Conclusion actuelle : le Bluetooth demande une recherche separee autour de la
-pile Bluetooth PS5, HCI/L2CAP/HIDP, la logique accessoire vers pad, ou les
-modules/PRX utilises par la DualSense officielle.
-
-
-## Lancer La Payload Finale
-
-1. Demarrer l'ecoute payload sur la PS5, port `9021`.
-2. Lancer :
-
-```powershell
-.\Launch-GhostControl-ManbaV2-NBJr.ps1
-```
-
-ou double-cliquer :
-
-```text
-Launch-GhostControl-ManbaV2-NBJr.bat
-```
-
-3. Entrer l'IP de la PS5.
-4. Lancer 1/2/3 
-   1 : Kill ancienne payload et renjecte payload propre 
-   2:  Elf ghost  ( active auto )
-   3:  Kill seul
-
-## Ou Regarder Pour Les Patchs
-
-```
-Les zones importantes :
-
-- `payload/controller_mamba.h`
-  - VID/PID Manba.
-  - mode PC/XInput.
-  - mode Switch USB.
-- `payload/controller_mamba.c`
-  - mapping Manba PC/XInput.
-  - axes XInput.
-  - boutons XInput.
-- `payload/gc_main.c`
-  - detection Manba.
-  - routage USB.
-  - correction axe Y Switch Manba apres `nintendo_handle_packet()`.
-  - logique de liberation/recreation VDA.
-  - detection manette officielle qui reprend le meme user.
-- `payload/shellui_pad.c`
-  - fonctions ShellUI/MBus pour couper une manette physique.
-  - verification handle/user.
-- `payload/shellui_pad.h`
-  - declarations des nouvelles fonctions.
-- `payload/Makefile`
-  - ajout de `controller_mamba.o`.
-
-## Correction Switch Importante
-
-La correction Switch n'est pas dans `controller_nintendo.c`.
-
-Elle est dans :
-
-```text
-payload/gc_main.c
-```
-
-dans `usb_hid_thread`, apres :
-
-```c
-injected = nintendo_handle_packet(...);
-```
-
-avec :
-
-```c
-if (injected > 0 && is_mamba_switch)
-    pad.leftStick.y = (uint8_t)(255u - pad.leftStick.y);
-```
-
-Pourquoi ici ?
-
-Parce que si on inverse directement dans `controller_nintendo.c`, on risque de
-casser les vraies manettes Switch Pro ou les autres pads compatibles Nintendo ( je n'ai pas de manettes pour test )
-La correction doit rester limitee a la Manba reconnue comme `057e:2009`.
+The standard adapter exposes four controller ports through one USB device. GhostControl Expanded parses the full 37-byte report and can route occupied ports to separate virtual PS5 controllers. Four-player user assignment remains a beta feature pending real-console testing.
 
 ## Build
 
-La compilation utilise l'environnement PS5 payload SDK…
+Install the current PS5 Payload SDK and set `PS5_PAYLOAD_SDK`:
 
-Script utilise pendant les tests :
-
-```text
-payload/build_correction.sh
+```sh
+export PS5_PAYLOAD_SDK=/opt/ps5-payload-sdk
+make -C "SOURCE MODIFIEE PAYLOAD" clean
+make -C "SOURCE MODIFIEE PAYLOAD"
 ```
 
-ELF finale testee OK :
+Outputs:
 
 ```text
-ELF/GhostControl-ManbaV2-NBJr-USB-Patch.elf
+SOURCE MODIFIEE PAYLOAD/GhostControl-Expanded.elf
+SOURCE MODIFIEE PAYLOAD/GhostControl-Stop.elf
 ```
 
-## Avertissement
+The inherited source-directory name is retained for repository history; all project documentation is English.
 
-Recherche uniquement a titre educatif . A utiliser a vos risques et perils . Tester uniquement avec mon environnement PS5 6.02 et Manba.
-Je ne dispose pas d'outils , script ou payload magique universel malheuresement pour analyse plus approfondi pour support d autre manettes ou adapation BT,  je procede par etapes par etapes, cela demande du temps ...
+For the wireless DS4 backend:
 
+```sh
+cd "WIRELESS DS4 POORDS4"
+make clean
+make release
+```
+
+See [Build and Install](docs/BUILD_AND_INSTALL.md).
+
+## Windows launcher
+
+Release packages contain:
+
+```text
+Launch-GhostControl-Expanded.bat
+Launch-GhostControl-Expanded.ps1
+ELF/
+  GhostControl-Expanded.elf
+  GhostControl-Stop.elf
+```
+
+The launcher uses payload port `9021` by default and offers Start/Reload, Clean Restart, and Stop.
+
+## FFPFSC / ShadowMountPlus
+
+Games launched from `.ffpfsc` images do not need a special controller build. Launch the game through your normal ShadowMountPlus workflow first. GhostControl and the optional PoorDS4 bridge operate on the running controller/game processes after launch.
+
+For wireless DS4 testing on firmware 13.60:
+
+1. launch the `.ffpfsc` game normally;
+2. pair the DS4 under **Settings > Accessories > Bluetooth Accessories**;
+3. attach it to the intended user;
+4. run the PoorDS4 bridge;
+5. if it does not activate, run `PoorDS4-status.elf`;
+6. run `PoorDS4-evidence.elf`;
+7. retrieve `/data/poords4/13x-evidence.txt`.
+
+Do not bypass a structural firmware/game rejection.
+
+## Automated validation
+
+CI covers GameCube adapter matching and initialization, all four GameCube port records, GameCube buttons/sticks/triggers, wired DS3/DS4 parsing, Sony VID/PID matching, PoorDS4 safety invariants, and release compilation with the public PS5 Payload SDK.
+
+## Repository layout
+
+```text
+SOURCE MODIFIEE PAYLOAD/   Unified USB controller payload
+WIRELESS DS4 POORDS4/      Optional native-paired wireless DS4 backend
+docs/                      Project documentation
+tests/                     Host-side parser tests
+.github/workflows/         CI and release packaging
+```
+
+## Documentation
+
+- [Build and Install](docs/BUILD_AND_INSTALL.md)
+- [Supported Controllers](docs/SUPPORTED_CONTROLLERS.md)
+- [GameCube Adapter](docs/GAMECUBE_ADAPTER.md)
+- [GameCube Multi-Port](docs/GAMECUBE_MULTIPORT.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Roadmap](docs/ROADMAP.md)
+- [v0.1.0-beta Release Notes](docs/RELEASE_NOTES_0.1.0-beta.md)
+- [Credits](CREDITS.md)
+
+## Beta limitations
+
+This release is intentionally labeled beta. The parsers and build are automated-tested, but broader PS5 hardware validation is still needed for four simultaneous GameCube pads, third-party adapter variants, hotplug edge cases, and firmware 13.60 wireless DS4 compatibility.
+
+When reporting a problem, include `/data/ghostpad/gc_status.log` or the PoorDS4 evidence bundle.
+
+## License and credits
+
+GhostControl Expanded retains the licensing requirements of its upstream components. The optional PoorDS4 backend is GPL-3.0-or-later and includes its upstream license, notice, provenance, and documentation.
+
+See [CREDITS.md](CREDITS.md).

@@ -7,6 +7,23 @@
 #include "controller_ds4.h"
 #include <string.h>
 
+int ds4_is_supported_vidpid(uint16_t vid, uint16_t pid) {
+    if (vid == VID_SONY)
+        return pid == PID_DS4_V1 || pid == PID_DS4_V2;
+    if (vid == VID_HORI)
+        return pid == PID_HORIPAD_FPSPLUS ||
+               pid == PID_HORIPAD4 ||
+               pid == PID_HORIPAD_FPSPLUS_X ||
+               pid == PID_HORIPAD_MINI4;
+    return 0;
+}
+
+const char *ds4_name(uint16_t vid, uint16_t pid) {
+    (void)pid;
+    return vid == VID_SONY ? "Sony DualShock 4" : "DS4-compatible HORI controller";
+}
+
+
 /* Hat lookup: index 0..8 → (up, right, down, left) bits */
 static const uint8_t HAT_DPAD[9] = {
     /* 0 N  */ SCE_PAD_BUTTON_UP,
