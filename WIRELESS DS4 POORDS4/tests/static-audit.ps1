@@ -132,6 +132,10 @@ Assert-True ($bridge.Contains('rejected-structural')) `
     'Compatibility digest no longer records structural rejection.'
 Assert-True ($bridge.Contains('accepted-structural')) `
     'Compatibility digest no longer records structural admission.'
+Assert-True ($statusMain.Contains('fw-compat-last.txt')) `
+    'Status payload does not surface firmware compatibility digest.'
+Assert-True ($statusMain.Contains('--- firmware compatibility ---')) `
+    'Status report no longer labels the firmware compatibility section.'
 Assert-True ($bridge.Contains('scePadSetLoginUserNumber')) `
     'RemotePlay login-user context setup is missing.'
 Assert-True ($bridge.Contains('scePadSetProcessFocus')) `
