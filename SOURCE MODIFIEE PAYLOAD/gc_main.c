@@ -1873,7 +1873,8 @@ static void *controller_manager_thread(void *arg) {
             assign_wait = 0;
         }
 
-        physical_recovery_tick(scan);
+        if (!any_non_mamba_slot_active())
+            physical_recovery_tick(scan);
 
         scan++;
         if ((scan % 5) == 0) {
