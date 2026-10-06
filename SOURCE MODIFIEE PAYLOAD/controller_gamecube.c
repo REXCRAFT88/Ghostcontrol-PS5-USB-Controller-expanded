@@ -210,3 +210,71 @@ int gamecube_feedback_wants_rumble(const uint8_t *buf, uint32_t len) {
         return 0;
     return buf[3] != 0u || buf[4] != 0u;
 }
+
+enum {
+    GC_AXIS_LX = 0,
+    GC_AXIS_LY,
+    GC_AXIS_RX,
+    GC_AXIS_RY,
+    GC_AXIS_LT,
+    GC_AXIS_RT,
+    GC_AXIS_COUNT
+};
+
+static uint8_t gamecube_remap_axis(uint8_t value, uint8_t minv, uint8_t maxv) {
+    if (maxv <= minv)
+        return 128u;
+    if (value <= minv)
+        return 0u;
+    if (value >= maxv)
+        return 255u;
+
+    uint32_t num = (uint32_t)(value - minv) * 255u;
+    uint32_t den = (uint32_t)(maxv - minv);
+    return (uint8_t)((num + den / 2u) / den);
+}
+
+void gamecube_calibration_reset(GameCubeCalibration *cal) {
+    if (!cal)
+        return;
+
+    for (unsigned i = 0; i < GC_AXIS_COUNT; i++) {
+        cal->min_axis[i] = 40u;
+        cal->max_axis[i] = 216u;
+    }
+
+    /* Trigger resting values are often around 40 in HID/PC mode. The same
+     * defaults are harmless for Nintendo mode because observed lower values
+     * immediately expand the range down toward zero. */
+    cal->min_axis[GC_AXIS_LT] = 40u;
+    cal->min_axis[GC_AXIS_RT] = 40u;
+}
+
+static uint8_t gamecube_calibrate_value(GameCubeCalibration *cal,
+                                        unsigned axis, uint8_t raw) {
+    if (raw < cal->min_axis[axis])
+        cal->min_axis[axis] = raw;
+    if (raw > cal->max_axis[axis])
+        cal->max_axis[axis] = raw;
+
+    return gamecube_remap_axis(
+        raw, cal->min_axis[axis], cal->max_axis[axis]);
+}
+
+void gamecube_calibration_apply(GameCubeCalibration *cal, ScePadData *pad) {
+    if (!cal || !pad)
+        return;
+
+    pad->leftStick.x = gamecube_calibrate_value(
+        cal, GC_AXIS_LX, pad->leftStick.x);
+    pad->leftStick.y = gamecube_calibrate_value(
+        cal, GC_AXIS_LY, pad->leftStick.y);
+    pad->rightStick.x = gamecube_calibrate_value(
+        cal, GC_AXIS_RX, pad->rightStick.x);
+    pad->rightStick.y = gamecube_calibrate_value(
+        cal, GC_AXIS_RY, pad->rightStick.y);
+    pad->analogButtons.l2 = gamecube_calibrate_value(
+        cal, GC_AXIS_LT, pad->analogButtons.l2);
+    pad->analogButtons.r2 = gamecube_calibrate_value(
+        cal, GC_AXIS_RT, pad->analogButtons.r2);
+}
