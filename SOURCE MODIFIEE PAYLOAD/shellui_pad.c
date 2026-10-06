@@ -1220,6 +1220,10 @@ void shellui_stub_force_vda(void *arg)
          * 400 iterations × 150ms = 60 seconds — allows manual user dismiss. */
         int32_t attempt;
         for (attempt = 0; attempt < 400 && vda_handle < 0; attempt++) {
+            if (a->stop) {
+                a->ready = -1;
+                return;
+            }
             for (ui = 0; ui < 3 && vda_handle < 0; ui++) {
                 int32_t idx;
                 for (idx = 0; idx < 8 && vda_handle < 0; idx++) {
