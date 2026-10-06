@@ -1113,6 +1113,48 @@ void shellui_stub_force_vda(void *arg)
         }
     }
 
+    /* PS5 13.60 exposes the VDA through Open Pad type=0 even though it
+     * was created as virtual device type 3. Probe the type-0 handle namespace
+     * first; the existing type-3 recovery below remains as a fallback. */
+    if (vda_handle < 0 && (a->fp_gethandle_ext || a->fp_gethandle)) {
+        for (ui = 0; ui < 3 && vda_handle < 0; ui++) {
+            int32_t idx;
+            for (idx = 0; idx < 8 && vda_handle < 0; idx++) {
+                int32_t gh = a->fp_gethandle_ext
+                    ? a->fp_gethandle_ext(uid_try[ui], 0, idx, 0, 0, 0)
+                    : a->fp_gethandle(uid_try[ui], 0, idx);
+                a->rc_log[3] = gh;
+                a->rc_log[6] = (int32_t)(0x5200 | (idx & 0xff));
+                if (gh >= 0) {
+                    vda_handle = gh;
+                    a->pad_handle = gh;
+                    a->rc_log[5] = (int32_t)0x70000009;
+                    a->rc_log[7] = (int32_t)0x56444930u;
+                    use_insert = 0;
+                }
+            }
+        }
+    }
+
+    if (vda_handle < 0 && (a->fp_open_ext2 || a->fp_open_ext || a->fp_open)) {
+        for (ui = 0; ui < 3 && vda_handle < 0; ui++) {
+            int32_t oh = a->fp_open_ext2
+                ? a->fp_open_ext2(uid_try[ui], 0, 0, (void *)0, 0, 0)
+                : (a->fp_open_ext
+                    ? a->fp_open_ext(uid_try[ui], 0, 0, (void *)0, 0, 0)
+                    : (a->fp_open ? a->fp_open(uid_try[ui], 0, 0, (void *)0) : -1));
+            a->rc_log[4] = oh;
+            a->rc_log[6] = (int32_t)0x5300;
+            if (oh >= 0) {
+                vda_handle = oh;
+                a->pad_handle = oh;
+                a->rc_log[5] = (int32_t)0x7000000a;
+                a->rc_log[7] = (int32_t)0x56444930u;
+                use_insert = 0;
+            }
+        }
+    }
+
     if (handle_from_vda_token && (a->fp_gethandle_ext || a->fp_gethandle)) {
         for (ui = 0; ui < 3 && handle_from_vda_token; ui++) {
             int32_t idx;
