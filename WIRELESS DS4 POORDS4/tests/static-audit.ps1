@@ -10,11 +10,11 @@ function Assert-True {
 }
 
 $main = [IO.File]::ReadAllText(
-    (Join-Path $repo 'payload\game_pad_bridge_main.c'))
+    (Join-Path $repo 'game_pad_bridge_main.c'))
 $bridge = [IO.File]::ReadAllText(
-    (Join-Path $repo 'payload\wireless_ds4.c'))
+    (Join-Path $repo 'wireless_ds4.c'))
 $makefile = [IO.File]::ReadAllText(
-    (Join-Path $repo 'payload\Makefile'))
+    (Join-Path $repo 'Makefile'))
 
 Assert-True ($makefile.Contains('RC_VERSION := 51')) `
     'Makefile RC version is not 51.'
@@ -166,33 +166,25 @@ Assert-True (-not $installer.Contains('pt_call(')) `
 Assert-True (-not $installer.Contains('PT_ATTACH')) `
     'Active game installer contains a game attach operation.'
 
-$tracked = & git -C $repo ls-files
-if ($LASTEXITCODE -ne 0) {
-    throw 'git ls-files failed.'
-}
-$expectedTracked = @(
-    '.gitattributes',
-    '.gitignore',
-    'CHANGELOG.md',
+$expectedVendoredFiles = @(
     'LICENSE',
     'NOTICE.md',
     'README.md',
+    'UPSTREAM.md',
     'docs/ARCHITECTURE.md',
     'docs/FIRMWARE_SUPPORT.md',
-    'payload/Makefile',
-    'payload/game_pad_bridge_main.c',
-    'payload/game_pad_bridge_status_main.c',
-    'payload/pad_types.h',
-    'payload/stop_game_pad_bridge_main.c',
-    'payload/wireless_ds4.c',
-    'payload/wireless_ds4.h',
+    'Makefile',
+    'game_pad_bridge_main.c',
+    'game_pad_bridge_status_main.c',
+    'pad_types.h',
+    'stop_game_pad_bridge_main.c',
+    'wireless_ds4.c',
+    'wireless_ds4.h',
     'tests/static-audit.ps1'
 )
-Assert-True ($tracked.Count -eq $expectedTracked.Count) `
-    'Tracked file count does not match the focused public tree.'
-foreach ($path in $expectedTracked) {
-    Assert-True ($tracked -contains $path) `
-        "Required public-tree file is missing: $path"
+foreach ($path in $expectedVendoredFiles) {
+    Assert-True (Test-Path (Join-Path $repo $path)) `
+        "Required vendored PoorDS4 file is missing: $path"
 }
 
-Write-Output 'PoorDS4 static audit passed.'
+Write-Output 'PoorDS4 vendored static audit passed.'
