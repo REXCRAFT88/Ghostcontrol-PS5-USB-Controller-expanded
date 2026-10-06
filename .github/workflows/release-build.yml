@@ -1,0 +1,115 @@
+name: Build release candidate
+
+on:
+  push:
+    branches:
+      - "release/v0.1.0-beta"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GameCube parser tests
+        run: sh tests/run_gamecube_tests.sh
+      - name: Wired Sony parser tests
+        run: sh tests/run_sony_tests.sh
+
+  poords4-audit:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PoorDS4 vendored static audit
+        shell: pwsh
+        run: |
+          Set-Location "WIRELESS DS4 POORDS4"
+          ./tests/static-audit.ps1
+
+  build:
+    needs: [host-tests, poords4-audit]
+    runs-on: ubuntu-latest
+    env:
+      PS5_PAYLOAD_SDK: /opt/ps5-payload-sdk
+      VERSION: v0.1.0-beta
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 lld-18 wget unzip zip make
+
+      - name: Install PS5 Payload SDK
+        run: |
+          wget -q https://github.com/ps5-payload-dev/sdk/releases/latest/download/ps5-payload-sdk.zip
+          sudo unzip -q ps5-payload-sdk.zip -d /opt
+          test -f /opt/ps5-payload-sdk/toolchain/prospero.mk
+
+      - name: Build unified USB payload
+        run: |
+          make -C "SOURCE MODIFIEE PAYLOAD" clean
+          make -C "SOURCE MODIFIEE PAYLOAD"
+
+      - name: Build wireless DS4 helpers
+        run: |
+          make -C "WIRELESS DS4 POORDS4" clean
+          make -C "WIRELESS DS4 POORDS4" release
+
+      - name: Assemble release package
+        run: |
+          PKG="dist/GhostControl-Expanded-${VERSION}"
+          mkdir -p "${PKG}/ELF"
+          mkdir -p "${PKG}/Wireless-DS4"
+          cp "SOURCE MODIFIEE PAYLOAD/GhostControl-Expanded.elf" "${PKG}/ELF/"
+          cp "SOURCE MODIFIEE PAYLOAD/GhostControl-Stop.elf" "${PKG}/ELF/"
+          cp "WIRELESS DS4 POORDS4/PoorDS4rc51.elf" "${PKG}/Wireless-DS4/"
+          cp "WIRELESS DS4 POORDS4/PoorDS4-status.elf" "${PKG}/Wireless-DS4/"
+          cp "WIRELESS DS4 POORDS4/PoorDS4-stop.elf" "${PKG}/Wireless-DS4/"
+          cp "WIRELESS DS4 POORDS4/PoorDS4-evidence.elf" "${PKG}/Wireless-DS4/"
+          cp Launch-GhostControl-Expanded.ps1 "${PKG}/"
+          cp Launch-GhostControl-Expanded.bat "${PKG}/"
+          cp README.md CREDITS.md "${PKG}/"
+          cp -r docs "${PKG}/"
+          cp "WIRELESS DS4 POORDS4/LICENSE" "${PKG}/Wireless-DS4/"
+          cp "WIRELESS DS4 POORDS4/NOTICE.md" "${PKG}/Wireless-DS4/"
+          cp "WIRELESS DS4 POORDS4/README.md" "${PKG}/Wireless-DS4/"
+          (cd dist && zip -r "GhostControl-Expanded-${VERSION}.zip" "GhostControl-Expanded-${VERSION}")
+
+      - name: Upload release ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: GhostControl-Expanded-v0.1.0-beta
+          path: dist/GhostControl-Expanded-v0.1.0-beta.zip
+          if-no-files-found: error
+
+  publish-prerelease:
+    needs: build
+    if: github.ref == 'refs/heads/release/v0.1.0-beta' && hashFiles('RELEASE_READY') != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: GhostControl-Expanded-v0.1.0-beta
+          path: dist
+      - name: Create or update GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v0.1.0-beta >/dev/null 2>&1; then
+            gh release upload v0.1.0-beta dist/GhostControl-Expanded-v0.1.0-beta.zip --clobber
+          else
+            gh release create v0.1.0-beta \
+              dist/GhostControl-Expanded-v0.1.0-beta.zip \
+              --target "${GITHUB_SHA}" \
+              --title "GhostControl Expanded v0.1.0-beta" \
+              --notes-file docs/RELEASE_NOTES_0.1.0-beta.md \
+              --prerelease
+          fi
