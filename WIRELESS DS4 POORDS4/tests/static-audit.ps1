@@ -126,6 +126,12 @@ Assert-True ($bridge.Contains('reason=known-module-target')) `
     'Unreadable import names are not bounded by loaded-module ownership.'
 Assert-True ($bridge.Contains('source_library_match')) `
     'Same-firmware source/game libScePad comparison is missing.'
+Assert-True ($bridge.Contains('fw-compat-last.txt')) `
+    'Compact fail-closed firmware compatibility digest is missing.'
+Assert-True ($bridge.Contains('rejected-structural')) `
+    'Compatibility digest no longer records structural rejection.'
+Assert-True ($bridge.Contains('accepted-structural')) `
+    'Compatibility digest no longer records structural admission.'
 Assert-True ($bridge.Contains('scePadSetLoginUserNumber')) `
     'RemotePlay login-user context setup is missing.'
 Assert-True ($bridge.Contains('scePadSetProcessFocus')) `
