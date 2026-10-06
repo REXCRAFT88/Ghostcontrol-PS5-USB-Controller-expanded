@@ -6,11 +6,31 @@
 #include "../SOURCE MODIFIEE PAYLOAD/controller_gamecube.h"
 #include "../SOURCE MODIFIEE PAYLOAD/usb_helpers.h"
 
-/* Parser tests do not perform USB output; satisfy controller_gamecube.c linkage. */
+static uint8_t g_last_out_byte;
+static uint32_t g_last_out_len;
+static int g_out_calls;
+
+/* Capture adapter initialization output without needing PS5 USB hardware. */
 int usb_send_out(int fd, struct usb_fs_endpoint *ep,
                  const uint8_t *data, uint32_t len, const char *tag) {
-    (void)fd; (void)ep; (void)data; (void)len; (void)tag;
+    (void)fd; (void)ep; (void)tag;
+    g_out_calls++;
+    g_last_out_len = len;
+    g_last_out_byte = (data && len) ? data[0] : 0;
     return 0;
+}
+
+static void test_adapter_init_command(void) {
+    struct usb_fs_endpoint ep[2];
+    memset(ep, 0, sizeof(ep));
+    g_out_calls = 0;
+    g_last_out_len = 0;
+    g_last_out_byte = 0;
+
+    assert(gamecube_send_init(-1, ep) == 0);
+    assert(g_out_calls == 1);
+    assert(g_last_out_len == 1);
+    assert(g_last_out_byte == GAMECUBE_ADAPTER_INIT_CMD);
 }
 
 static void fill_port(uint8_t *report, unsigned port,
@@ -92,6 +112,7 @@ static void test_empty_port_and_invalid_report(void) {
 }
 
 int main(void) {
+    test_adapter_init_command();
     assert(gamecube_is_adapter(0x057e, 0x0337));
     assert(!gamecube_is_adapter(0x057e, 0x2009));
 
