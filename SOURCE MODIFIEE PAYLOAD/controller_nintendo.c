@@ -410,8 +410,18 @@ int nintendo_handle_packet_profile(int fd, struct usb_fs_endpoint *eps,
             LOG("0x81 0x02 → [80 04] + subcmds\n");
 
             uint8_t d[] = {0x01};
-            nintendo_send_subcmd(fd, eps, seq, 0x40, d, 1);
-            nintendo_send_subcmd(fd, eps, seq, 0x48, d, 1);
+
+            /* Switch Pro / Manba use IMU. The NSO retro controllers do not,
+             * so avoid sending an unnecessary sensor-enable subcommand. */
+            if (profile == NINTENDO_PROFILE_STANDARD)
+                nintendo_send_subcmd(fd, eps, seq, 0x40, d, 1);
+
+            /* The N64 controller has rumble. Keep vibration disabled on the
+             * SNES/Genesis profiles until their output behavior is verified. */
+            if (profile == NINTENDO_PROFILE_STANDARD ||
+                profile == NINTENDO_PROFILE_N64)
+                nintendo_send_subcmd(fd, eps, seq, 0x48, d, 1);
+
             nintendo_send_subcmd(fd, eps, seq, 0x30, d, 1);
 
             uint8_t d2[] = {0x30};
