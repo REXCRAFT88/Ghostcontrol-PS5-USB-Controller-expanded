@@ -91,7 +91,7 @@ jobs:
 
   publish-prerelease:
     needs: build
-    if: github.ref == 'refs/heads/release/v0.1.0-beta' && hashFiles('RELEASE_READY') != ''
+    if: github.ref == 'refs/heads/release/v0.1.0-beta'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
