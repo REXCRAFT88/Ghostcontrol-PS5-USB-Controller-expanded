@@ -82,6 +82,11 @@ int shellui_pad_update(pid_t shellui_pid, intptr_t args_kaddr,
  * deletes its virtual device before exiting. */
 int shellui_pad_stop(pid_t shellui_pid, intptr_t args_kaddr);
 
+/* Wait for the target-process stub to finish VDA creation/assignment and
+ * expose a usable pad handle. Returns 0 on ready, -1 on failure/timeout. */
+int shellui_pad_wait_ready(pid_t shellui_pid, intptr_t args_kaddr,
+                           int timeout_ms, int32_t *out_handle);
+
 int shellui_pad_direct_usable(pid_t shellui_pid, intptr_t args_kaddr);
 int shellui_pad_direct_mode(pid_t shellui_pid, intptr_t args_kaddr);
 int shellui_pad_direct_adopt_vdi_handle(pid_t shellui_pid, intptr_t args_kaddr,
