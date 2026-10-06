@@ -58,6 +58,7 @@ Expected outputs:
 - `PoorDS4rc51.elf` — automatic wireless DS4 bridge
 - `PoorDS4-status.elf` — read-only status snapshot
 - `PoorDS4-stop.elf` — cooperative stop payload
+- `PoorDS4-evidence.elf` — read-only 13.x evidence bundle collector
 
 ## Pairing
 
@@ -71,15 +72,18 @@ Pair the DS4 using the PS5 UI rather than GhostControl:
 
 ## Firmware 13.60 testing order
 
+If your game is launched from an `.ffpfsc` image, keep using your normal FFPFSC mount/launch workflow. PoorDS4 acts on the running game process after launch, so the compressed storage container does not need a separate controller path.
+
 For the first 13.60 test:
 
 1. Pair the DS4 normally in PS5 Settings.
 2. Back up game saves before testing an unknown firmware/game combination.
 3. Launch `PoorDS4rc51.elf`.
 4. If no active notification appears, run `PoorDS4-status.elf`.
-5. Copy the complete `/data/poords4/` directory for analysis.
-6. Check `/data/poords4/fw-compat-last.txt` first. It gives a compact pass/fail breakdown of the structural firmware gate and source/game fingerprints without bypassing any check.
-7. Use `PoorDS4-stop.elf` before replacing/reinjecting another bridge build.
+5. Run `PoorDS4-evidence.elf` after reproducing the test once.
+6. Retrieve `/data/poords4/13x-evidence.txt` plus, if convenient, the full `/data/poords4/` directory.
+7. Check `/data/poords4/fw-compat-last.txt` first. It gives a compact pass/fail breakdown of the structural firmware gate and source/game fingerprints without bypassing any check.
+8. Use `PoorDS4-stop.elf` before replacing/reinjecting another bridge build.
 
 Do not bypass structural rejection just to force 13.60 support. The rejection report is more useful than a blind hook.
 
