@@ -1,0 +1,70 @@
+PS5_HOST ?=
+PORT     ?= 9021
+RC_VERSION := 51
+
+TARGET        := PoorDS4rc$(RC_VERSION).elf
+EXP_TARGET    := PoorDS4exp.elf
+STATUS_TARGET := PoorDS4-status.elf
+STOP_TARGET   := PoorDS4-stop.elf
+EVIDENCE_TARGET := PoorDS4-evidence.elf
+
+ifndef PS5_PAYLOAD_SDK
+$(error PS5_PAYLOAD_SDK is not set)
+endif
+
+include $(PS5_PAYLOAD_SDK)/toolchain/prospero.mk
+
+STRIP ?= llvm-strip
+
+CFLAGS  += -D__PROSPERO__ -Wall -Wextra -Wshadow -Wunreachable-code \
+	-Werror -g -O2 -fPIC \
+	-fno-stack-protector -ffunction-sections -fdata-sections \
+	-fdebug-compilation-dir=.
+LDFLAGS      += -Wl,--gc-sections,--build-id=sha1
+RUNTIME_LIBS := -nodefaultlibs -lc -lkernel_web -lSceLibcInternal
+BRIDGE_LIBS  := $(RUNTIME_LIBS) -lSceUserService
+
+.PHONY: all audit clean deploy release status stop evidence
+
+all: $(TARGET) $(EXP_TARGET)
+
+$(TARGET): game_pad_bridge_main.c wireless_ds4.c wireless_ds4.h pad_types.h
+	$(CC) $(CFLAGS) -DPOORDS4_AUTO_WATCH=1 \
+		-DPOORDS4_RC_VERSION=$(RC_VERSION) -o $@ \
+		game_pad_bridge_main.c wireless_ds4.c $(LDFLAGS) $(BRIDGE_LIBS)
+
+$(EXP_TARGET): $(TARGET)
+	cp -f $(TARGET) $(EXP_TARGET)
+
+status: $(STATUS_TARGET)
+
+$(STATUS_TARGET): game_pad_bridge_status_main.c wireless_ds4.c \
+	wireless_ds4.h pad_types.h
+	$(CC) $(CFLAGS) -o $@ game_pad_bridge_status_main.c wireless_ds4.c \
+		$(LDFLAGS) $(RUNTIME_LIBS)
+
+stop: $(STOP_TARGET)
+
+$(STOP_TARGET): stop_game_pad_bridge_main.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(RUNTIME_LIBS)
+
+evidence: $(EVIDENCE_TARGET)
+
+$(EVIDENCE_TARGET): collect_13x_evidence_main.c
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS) $(RUNTIME_LIBS)
+
+release: all status stop evidence
+	$(STRIP) --strip-debug $(TARGET) $(STATUS_TARGET) $(STOP_TARGET) $(EVIDENCE_TARGET)
+
+audit:
+	powershell -NoProfile -ExecutionPolicy Bypass \
+		-File .\tests\static-audit.ps1
+
+clean:
+	rm -f PoorDS4rc*.elf $(STATUS_TARGET) $(STOP_TARGET) $(EVIDENCE_TARGET)
+
+deploy: $(TARGET)
+ifndef PS5_HOST
+	$(error PS5_HOST is not set)
+endif
+	nc -w 8 $(PS5_HOST) $(PORT) < $(TARGET)

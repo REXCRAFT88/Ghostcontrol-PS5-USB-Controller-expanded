@@ -1,0 +1,24 @@
+name: PoorDS4 vendored audit
+
+on:
+  push:
+    branches:
+      - feature/native-wireless-ds4-poords4
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-audit:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Run PoorDS4 static audit
+        shell: pwsh
+        run: |
+          Set-Location "WIRELESS DS4 POORDS4"
+          ./tests/static-audit.ps1

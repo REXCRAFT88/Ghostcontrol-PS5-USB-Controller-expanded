@@ -17,6 +17,25 @@ Le travail ajoute ici concerne surtout :
 - Un peu de notes de recherche Bluetooth separees, car le Bluetooth n'est pas resolu
   dans cette ELF, encore en recherche...
 
+## Optional Wireless DualShock 4
+
+A separate optional wireless DS4 backend is now carried under:
+
+```text
+WIRELESS DS4 POORDS4/
+```
+
+It vendors the GPL-3.0-or-later **PoorDS4** project by ItsBlurf and uses a safer architecture than taking over the PS5 Bluetooth HCI transport directly:
+
+- pair the DualShock 4 normally in the PS5 Bluetooth Accessories menu;
+- let Sony's Bluetooth stack keep ownership of the controller;
+- discover/read the live DS4 through the PS5 pad path;
+- bridge validated DS4 state into native PS5 games.
+
+This keeps wireless DS4 independent from the USB/GameCube payload. Firmware 13.60 is not yet live-tested upstream, so the backend should be treated as experimental and allowed to fail closed when its structural checks reject the firmware/game.
+
+See `WIRELESS DS4 POORDS4/README.md` for build and test instructions.
+
 ## Credits
 
 - Projet/tool original : StonedModder,
