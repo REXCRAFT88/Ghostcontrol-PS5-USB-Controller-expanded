@@ -3,7 +3,7 @@ name: Build release candidate
 on:
   push:
     branches:
-      - "release/v0.1.5-beta"
+      - "release/v0.1.6-beta"
   pull_request:
     branches:
       - main
@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PS5_PAYLOAD_SDK: /opt/ps5-payload-sdk
-      VERSION: v0.1.5-beta
+      VERSION: v0.1.6-beta
     steps:
       - uses: actions/checkout@v4
 
@@ -95,9 +95,9 @@ jobs:
       - name: Upload release assets
         uses: actions/upload-artifact@v4
         with:
-          name: GhostControl-Expanded-v0.1.5-beta
+          name: GhostControl-Expanded-v0.1.6-beta
           path: |
-            dist/GhostControl-Expanded-v0.1.5-beta.zip
+            dist/GhostControl-Expanded-v0.1.6-beta.zip
             dist/GhostControl-Expanded.elf
             dist/GhostControl-Stop.elf
             dist/PoorDS4rc51.elf
@@ -108,13 +108,13 @@ jobs:
 
   publish-prerelease:
     needs: build
-    if: github.ref == 'refs/heads/release/v0.1.5-beta'
+    if: github.ref == 'refs/heads/release/v0.1.6-beta'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: GhostControl-Expanded-v0.1.5-beta
+          name: GhostControl-Expanded-v0.1.6-beta
           path: dist
 
       - name: Create or update GitHub prerelease
@@ -122,7 +122,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ASSETS=(
-            dist/GhostControl-Expanded-v0.1.5-beta.zip
+            dist/GhostControl-Expanded-v0.1.6-beta.zip
             dist/GhostControl-Expanded.elf
             dist/GhostControl-Stop.elf
             dist/PoorDS4rc51.elf
@@ -131,8 +131,8 @@ jobs:
             dist/PoorDS4-evidence.elf
           )
 
-          if gh release view v0.1.5-beta >/dev/null 2>&1; then
-            gh release upload v0.1.5-beta "${ASSETS[@]}" --clobber
+          if gh release view v0.1.6-beta >/dev/null 2>&1; then
+            gh release upload v0.1.6-beta "${ASSETS[@]}" --clobber
           else
-            gh release create v0.1.5-beta "${ASSETS[@]}"               --target "${GITHUB_SHA}"               --title "GhostControl Expanded v0.1.5-beta"               --notes-file docs/RELEASE_NOTES_0.1.5-beta.md               --prerelease
+            gh release create v0.1.6-beta "${ASSETS[@]}"               --target "${GITHUB_SHA}"               --title "GhostControl Expanded v0.1.6-beta"               --notes-file docs/RELEASE_NOTES_0.1.6-beta.md               --prerelease
           fi
