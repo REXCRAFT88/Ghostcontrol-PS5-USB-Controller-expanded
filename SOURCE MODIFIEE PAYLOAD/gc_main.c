@@ -161,6 +161,7 @@ static uint64_t klog_find_physical_open_pad(uint64_t virtual_dev_id);
 static int is_our_virtual_device_id(uint64_t dev_id);
 static void remember_virtual_device_id(uint64_t dev_id);
 static int any_mamba_slot_active(void);
+static int any_non_mamba_slot_active(void);
 static int any_gamecube_adapter_active(void);
 static void remember_physical_pad_for_recovery(uint64_t dev_id, const char *reason);
 static void physical_recovery_tick(int scan);
@@ -313,12 +314,8 @@ static void parse_klog_line(const char *line) {
                (uint32_t)open_handle, line);
         klog_open_pad_store(open_dev_id, open_type, open_handle);
         if (open_type == 0 && !is_our_virtual_device_id(open_dev_id)) {
-            if (!any_mamba_slot_active()) {
-                remember_physical_pad_for_recovery(open_dev_id,
-                                                   "physical Open Pad while Manba is off");
-            } else {
+            if (any_mamba_slot_active())
                 maybe_stop_mamba_for_same_user_physical_open(open_dev_id, open_handle, line);
-            }
         }
     }
 
@@ -338,9 +335,8 @@ static void parse_klog_line(const char *line) {
     } else {
         gp_log("klog: non-VDA pad device 0x%llx line=%.360s\n",
                (unsigned long long)id, line);
-        if (!any_mamba_slot_active())
-            remember_physical_pad_for_recovery(id,
-                                               "fresh physical DEVICE_ADDED while Manba is off");
+        /* Fresh physical pads are not recovery candidates. Only pads
+         * explicitly evicted by an active Manba slot are restored later. */
     }
 }
 
@@ -588,6 +584,21 @@ static int any_mamba_slot_active(void) {
             g_slots[s].vdi_ready &&
             !g_slots[s].released_pause &&
             mamba_is_supported_vidpid(g_slots[s].vid, g_slots[s].pid)) {
+            active = 1;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&g_slot_lock);
+    return active;
+}
+
+
+static int any_non_mamba_slot_active(void) {
+    int active = 0;
+    pthread_mutex_lock(&g_slot_lock);
+    for (int i = 0; i < MAX_SLOTS; i++) {
+        if (g_slots[i].usb_active &&
+            !mamba_is_supported_vidpid(g_slots[i].vid, g_slots[i].pid)) {
             active = 1;
             break;
         }
@@ -975,7 +986,8 @@ static int32_t create_vda_for_slot(int slot) {
         handle = (int32_t)(dev_id & 0xffffffffu);
         gp_log("slot[%d] using local VDA handle=0x%x for VDI\n",
                slot, (uint32_t)handle);
-        maybe_disconnect_physical_pad_for_slot(slot);
+        if (is_mamba)
+            maybe_disconnect_physical_pad_for_slot(slot);
     } else if (handle >= 0) {
         gp_log("slot[%d] klog timeout — using direct handle %d\n", slot, handle);
     } else {
@@ -1626,7 +1638,8 @@ main_loop: ;
                 gp_log("slot[%d] assignment confirmed (button press)\n", slot);
             }
             inject_pad(slot, &pad);
-            if ((g_slots[slot].inject_count % 600) == 0)
+            if (mamba_is_supported_vidpid(vid, pid) &&
+                (g_slots[slot].inject_count % 600) == 0)
                 maybe_disconnect_physical_pad_for_slot(slot);
         }
     }
