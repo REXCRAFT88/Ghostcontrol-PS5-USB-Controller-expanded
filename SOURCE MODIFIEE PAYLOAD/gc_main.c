@@ -1605,7 +1605,7 @@ main_loop: ;
                     g_slots[slot].confirmed = 0;
                     g_slots[slot].inject_count = 0;
                     pthread_mutex_unlock(&g_slot_lock);
-                    notify("Ghost-Control by StonedModder: slot[%d] ready - press a button to assign", slot);
+                    notify("GhostControl Expanded: slot[%d] ready - press a button to assign", slot);
                     gp_log("slot[%d] release pause VDA recreated handle=0x%x\n",
                            slot, (uint32_t)new_handle);
                 }
@@ -1853,7 +1853,7 @@ static void *controller_manager_thread(void *arg) {
                 pthread_detach(tid);
                 gp_log("manager: slot[%d] USB thread started handle=0x%x\n",
                        slot, (uint32_t)handle);
-                notify("Ghost-Control by StonedModder: slot[%d] ready - press a button to assign", slot);
+                notify("GhostControl Expanded: slot[%d] ready - press a button to assign", slot);
             }
             /* One controller per scan pass — assignment gate blocks the rest
              * until the user confirms this one with a button press. */
@@ -1937,8 +1937,8 @@ int main(void) {
     int32_t userId=-1, fgUser=-1; int ret;
 
     ghostpad_status_log_reset();
-    gp_log("Ghost-Control by StonedModder - Patch Manba V2 NBJr starting - %d slots\n", MAX_SLOTS);
-    notify("Ghost-Control by StonedModder - Patch Manba V2 NBJr");
+    gp_log("GhostControl Expanded v0.1.0-beta starting - %d slots\n", MAX_SLOTS);
+    notify("GhostControl Expanded v0.1.0-beta");
 
     /* Kill previous instance */
     { int pfd=open(PID_PATH,O_RDONLY);
