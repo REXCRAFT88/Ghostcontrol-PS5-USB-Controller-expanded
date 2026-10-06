@@ -46,6 +46,7 @@
 #include "controller_xbox.h"
 #include "controller_ds4.h"
 #include "controller_mamba.h"
+#include "controller_gamecube.h"
 
 /* ── Logging ──────────────────────────────────────────────────────────── */
 #define LOG_DIR  "/data/ghostpad"
@@ -400,6 +401,10 @@ static void inject_pad(int slot, const ScePadData *pad) {
  * Microsoft USB devices). */
 static int match_known_vidpid(uint16_t vid, uint16_t pid,
                               uint16_t *out_vid, uint16_t *out_pid) {
+    if (gamecube_is_adapter(vid, pid)) {
+        *out_vid = vid; *out_pid = pid;
+        return 1;
+    }
     if (mamba_is_supported_vidpid(vid, pid)) {
         *out_vid = vid; *out_pid = pid;
         return 1;
@@ -1136,6 +1141,54 @@ static void *usb_hid_thread(void *arg) {
         goto main_loop;
     }
 
+    /* ── GameCube Adapter: one-pass, four-port protocol ───────────────── */
+    if (gamecube_is_adapter(vid, pid)) {
+        fd = open(dev_path, O_RDWR);
+        if (fd < 0) { gp_log("slot[%d] GameCube adapter open fail errno=%d\n", slot, errno); goto exit_slot; }
+
+        { int ii; for (ii=0; ii<2; ii++) { int i2=ii; ioctl(fd, USB_IFACE_DRIVER_DETACH, &i2); } }
+        usleep(100000);
+
+        memset(eps,0,sizeof(eps)); memset(&init,0,sizeof(init));
+        init.pEndpoints=eps; init.ep_index_max=2;
+        if (ioctl(fd,USB_FS_INIT,&init)!=0) {
+            gp_log("slot[%d] GameCube adapter FS_INIT fail errno=%d\n", slot, errno);
+            close(fd); goto exit_slot;
+        }
+
+        memset(&fs_open,0,sizeof(fs_open));
+        fs_open.ep_index=0; fs_open.ep_no=GAMECUBE_ADAPTER_EP_IN;
+        fs_open.max_bufsize=64; fs_open.max_frames=1;
+        if (ioctl(fd,USB_FS_OPEN,&fs_open)!=0) {
+            gp_log("slot[%d] GameCube adapter IN fail errno=%d\n", slot, errno);
+            goto uninit_exit;
+        }
+        gp_log("slot[%d] GameCube adapter IN ep=0x%02x maxpkt=%u\n",
+               slot, GAMECUBE_ADAPTER_EP_IN, (unsigned)fs_open.max_packet_length);
+
+        buffers[0]=buf; lengths[0]=64;
+        eps[0].ppBuffer=buffers; eps[0].pLength=lengths; eps[0].nFrames=1;
+        eps[0].timeout=100;
+        eps[0].flags=USB_FS_FLAG_SINGLE_SHORT_OK|USB_FS_FLAG_MULTI_SHORT_OK;
+
+        memset(&fs_open,0,sizeof(fs_open));
+        fs_open.ep_index=1; fs_open.ep_no=GAMECUBE_ADAPTER_EP_OUT;
+        fs_open.max_bufsize=64; fs_open.max_frames=1;
+        out_opened = (ioctl(fd,USB_FS_OPEN,&fs_open)==0) ? 1 : 0;
+        if (!out_opened) {
+            gp_log("slot[%d] GameCube adapter OUT ep=0x%02x fail errno=%d\n",
+                   slot, GAMECUBE_ADAPTER_EP_OUT, errno);
+            goto uninit_exit;
+        }
+
+        int gc_init_ret = gamecube_send_init(fd, eps);
+        gp_log("slot[%d] GameCube adapter init ret=%d\n", slot, gc_init_ret);
+        if (gc_init_ret != 0)
+            goto uninit_exit;
+
+        goto main_loop;
+    }
+
     /* ── Nintendo: two-pass ────────────────────────────────────────────── */
     fd = open(dev_path, O_RDWR);
     if (fd < 0) { gp_log("slot[%d] open fail errno=%d\n", slot, errno); goto exit_slot; }
@@ -1205,9 +1258,10 @@ static void *usb_hid_thread(void *arg) {
 
 main_loop: ;
     int is_ds4 = (vid == VID_SONY || vid == VID_HORI);
+    int is_gamecube = gamecube_is_adapter(vid, pid);
     int is_mamba_xinput = mamba_is_xinput_vidpid(vid, pid);
     int is_mamba_switch = mamba_is_switch_vidpid(vid, pid);
-    int hs_state = (pid==PID_XBOX || is_ds4 || is_mamba_xinput) ? HS_STREAMING : HS_WAIT_81_01;
+    int hs_state = (pid==PID_XBOX || is_ds4 || is_gamecube || is_mamba_xinput) ? HS_STREAMING : HS_WAIT_81_01;
     uint8_t nintendo_seq = 1;
     g_slots[slot].usb_fd = fd;  /* register fd for clean teardown on SIGTERM */
 
@@ -1257,6 +1311,13 @@ main_loop: ;
 
         if (is_ds4) {
             injected = ds4_handle_packet(fd, eps, buf, len, &pad);
+        } else if (is_gamecube) {
+            /*
+             * Phase 1 exposes adapter port 1 as this virtual controller.
+             * The parser understands all four ports; multi-VDA adapter routing
+             * is the next GameCube milestone.
+             */
+            injected = gamecube_parse_port(buf, len, 0, &pad);
         } else if (is_mamba_xinput) {
             injected = mamba_xinput_handle_packet(fd, eps, buf, len, &pad);
         } else if (pid == PID_XBOX) {
@@ -1441,6 +1502,7 @@ static void *controller_manager_thread(void *arg) {
             }
 
             const char *name =
+                gamecube_is_adapter(vid,pid) ? gamecube_name() :
                 mamba_is_supported_vidpid(vid,pid) ? mamba_name(vid,pid) :
                                                      "Unknown";
 
