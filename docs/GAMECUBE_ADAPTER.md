@@ -72,3 +72,18 @@ Please record the log if the adapter is detected but does not stream input.
 4. Additional adapter VID/PID profiles, including Mayflash/clone PC modes.
 5. Configurable button mappings.
 6. WaveBird/wireless receiver validation.
+
+
+## Adapter compatibility notes
+
+### Mayflash / third-party adapters in Wii U or Switch mode
+
+Dolphin's current setup guide explicitly notes that third-party adapters such as Mayflash should be switched to **Wii U** or **Switch** mode, where they identify as the standard Nintendo adapter `057e:0337`. Those modes should therefore use this backend directly.
+
+The initialization path also sends the optional class/interface compatibility request used by Dolphin for some Nyko/off-brand adapters before sending the standard `0x13` adapter start command. Failure of that optional request is non-fatal because Mayflash adapters may reject it and still operate normally.
+
+### Mayflash / DragonRise PC mode
+
+Known PC-mode GameCube adapters may enumerate as DragonRise devices such as `0079:1843`, `0079:1844`, or `0079:1846`. They are **not** currently routed through the Wii U multi-port protocol parser because they expose a different HID interface/report format.
+
+Support for those PC/HID modes belongs in the generic-HID/profile layer rather than pretending they use `057e:0337` reports.
