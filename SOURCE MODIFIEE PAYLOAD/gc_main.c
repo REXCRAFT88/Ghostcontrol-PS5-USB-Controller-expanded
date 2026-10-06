@@ -48,6 +48,7 @@
 #include "controller_ds3.h"
 #include "controller_mamba.h"
 #include "controller_gamecube.h"
+#include "controller_generic_hid.h"
 
 /* ── Logging ──────────────────────────────────────────────────────────── */
 #define LOG_DIR  "/data/ghostpad"
@@ -1004,6 +1005,17 @@ static int create_shellcore_bridge_for_slot(int slot) {
     if (ret != 0 || pid <= 0 || args == 0)
         return -1;
 
+    {
+        int32_t remote_handle = -1;
+        if (shellui_pad_wait_ready(pid, args, 65000, &remote_handle) != 0) {
+            gp_log("slot[%d] ShellCore bridge never became ready; stopping\n", slot);
+            shellui_pad_stop(pid, args);
+            return -1;
+        }
+        gp_log("slot[%d] ShellCore bridge ready remote_handle=0x%x\n",
+               slot, (uint32_t)remote_handle);
+    }
+
     pthread_mutex_lock(&g_slot_lock);
     g_slots[slot].bridge_active = 1;
     g_slots[slot].bridge_pid = pid;
@@ -1315,6 +1327,38 @@ static void *usb_hid_thread(void *arg) {
         goto main_loop;
     }
 
+    /* ── Generic PS2/HORI HID: interrupt IN 0x81 ─────────────────────── */
+    if (generic_hid_is_supported(vid, pid)) {
+        fd = open(dev_path, O_RDWR);
+        if (fd < 0) { gp_log("slot[%d] generic HID open fail errno=%d\n", slot, errno); goto exit_slot; }
+
+        { int ii=0; ioctl(fd,USB_IFACE_DRIVER_DETACH,&ii); }
+        usleep(100000);
+
+        memset(eps,0,sizeof(eps)); memset(&init,0,sizeof(init));
+        init.pEndpoints=eps; init.ep_index_max=1;
+        if (ioctl(fd,USB_FS_INIT,&init)!=0) {
+            gp_log("slot[%d] generic HID FS_INIT fail errno=%d\n", slot, errno);
+            close(fd); goto exit_slot;
+        }
+
+        memset(&fs_open,0,sizeof(fs_open));
+        fs_open.ep_index=0; fs_open.ep_no=GENERIC_HID_EP_IN;
+        fs_open.max_bufsize=64; fs_open.max_frames=1;
+        if (ioctl(fd,USB_FS_OPEN,&fs_open)!=0) {
+            gp_log("slot[%d] generic HID IN fail errno=%d\n", slot, errno);
+            goto uninit_exit;
+        }
+        gp_log("slot[%d] generic HID IN ep=0x81 maxpkt=%u\n",
+               slot, (unsigned)fs_open.max_packet_length);
+
+        buffers[0]=buf; lengths[0]=64;
+        eps[0].ppBuffer=buffers; eps[0].pLength=lengths; eps[0].nFrames=1;
+        eps[0].timeout=50;
+        eps[0].flags=USB_FS_FLAG_SINGLE_SHORT_OK|USB_FS_FLAG_MULTI_SHORT_OK;
+        goto main_loop;
+    }
+
     /* ── Manba V2 PC/XInput mode: single-pass ─────────────────────────── */
     if (mamba_is_xinput_vidpid(vid, pid)) {
         fd = open(dev_path, O_RDWR);
@@ -1522,7 +1566,7 @@ main_loop: ;
     int is_gamecube = gamecube_is_adapter(vid, pid);
     int is_mamba_xinput = mamba_is_xinput_vidpid(vid, pid);
     int is_mamba_switch = mamba_is_switch_vidpid(vid, pid);
-    int hs_state = (pid==PID_XBOX || is_ds4 || is_ds3 || is_gamecube || is_mamba_xinput) ? HS_STREAMING : HS_WAIT_81_01;
+    int hs_state = (pid==PID_XBOX || is_ds4 || is_ds3 || is_generic_hid || is_gamecube || is_mamba_xinput) ? HS_STREAMING : HS_WAIT_81_01;
     uint8_t nintendo_seq = 1;
     g_slots[slot].usb_fd = fd;  /* register fd for clean teardown on SIGTERM */
 
@@ -1912,7 +1956,8 @@ static void *controller_manager_thread(void *arg) {
              * the process that owns the virtual-device handle. */
             int use_shellcore_bridge =
                 ds3_is_supported_vidpid(vid, pid) ||
-                ds4_is_supported_vidpid(vid, pid);
+                ds4_is_supported_vidpid(vid, pid) ||
+                generic_hid_is_supported(vid, pid);
             int32_t handle = -1;
             if (use_shellcore_bridge) {
                 if (create_shellcore_bridge_for_slot(slot) == 0)
