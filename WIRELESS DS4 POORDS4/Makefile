@@ -13,8 +13,7 @@ endif
 
 include $(PS5_PAYLOAD_SDK)/toolchain/prospero.mk
 
-CC := ps5-clang.cmd
-STRIP := llvm-strip
+STRIP ?= llvm-strip
 
 CFLAGS  += -D__PROSPERO__ -Wall -Wextra -Wshadow -Wunreachable-code \
 	-Werror -g -O2 -fPIC \
