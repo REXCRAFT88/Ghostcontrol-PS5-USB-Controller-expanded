@@ -1,0 +1,21 @@
+name: Wired Sony controller tests
+
+on:
+  push:
+    branches:
+      - feature/wired-sony-controllers
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sony-wired:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Run DS3 and DS4 parser tests
+        run: sh tests/run_sony_tests.sh
