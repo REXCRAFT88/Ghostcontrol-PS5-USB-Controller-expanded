@@ -1928,6 +1928,48 @@ shellui_pad_update(pid_t shellui_pid, intptr_t args_kaddr,
 }
 
 int
+shellui_pad_wait_ready(pid_t shellui_pid, intptr_t args_kaddr,
+                       int timeout_ms, int32_t *out_handle)
+{
+    int elapsed = 0;
+    int32_t ready = 0;
+    int32_t handle = -1;
+
+    if (out_handle) *out_handle = -1;
+    if (shellui_pid <= 0 || args_kaddr == 0)
+        return -1;
+
+    while (elapsed <= timeout_ms) {
+        ready = (int32_t)mdbg_getint(
+            shellui_pid,
+            args_kaddr + (intptr_t)offsetof(ShellUiPadArgs, ready));
+        handle = (int32_t)mdbg_getint(
+            shellui_pid,
+            args_kaddr + (intptr_t)offsetof(ShellUiPadArgs, pad_handle));
+
+        if (ready == 1 && handle >= 0) {
+            if (out_handle) *out_handle = handle;
+            klog_printf("[Ghostpad] bridge ready pid=%d args=0x%lx handle=0x%x after=%dms\n",
+                        shellui_pid, (unsigned long)args_kaddr,
+                        (uint32_t)handle, elapsed);
+            return 0;
+        }
+        if (ready < 0) {
+            klog_printf("[Ghostpad] bridge failed ready=%d handle=0x%x pid=%d after=%dms\n",
+                        ready, (uint32_t)handle, shellui_pid, elapsed);
+            return -1;
+        }
+
+        usleep(100000);
+        elapsed += 100;
+    }
+
+    klog_printf("[Ghostpad] bridge ready timeout pid=%d args=0x%lx ready=%d handle=0x%x\n",
+                shellui_pid, (unsigned long)args_kaddr, ready, (uint32_t)handle);
+    return -1;
+}
+
+int
 shellui_pad_stop(pid_t shellui_pid, intptr_t args_kaddr)
 {
     int32_t stop = 1;

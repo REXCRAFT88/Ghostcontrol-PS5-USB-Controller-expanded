@@ -12,3 +12,14 @@ cc -std=c99 -Wall -Wextra -Werror \
   -o "$OUT"
 
 "$OUT"
+
+
+GENERIC_OUT="${TMPDIR:-/tmp}/ghostcontrol-generic-hid-tests"
+cc -std=c99 -Wall -Wextra -Werror \
+  -I"$ROOT/tests/stubs" \
+  -I"$ROOT/SOURCE MODIFIEE PAYLOAD" \
+  "$ROOT/tests/test_generic_hid.c" \
+  "$ROOT/SOURCE MODIFIEE PAYLOAD/controller_generic_hid.c" \
+  -o "$GENERIC_OUT"
+
+"$GENERIC_OUT"
