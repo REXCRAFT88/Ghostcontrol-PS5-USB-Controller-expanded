@@ -113,6 +113,9 @@ typedef struct {
     volatile uint64_t evicted_physical_dev;
     volatile int      physical_evict_done;
     volatile uint32_t inject_count;
+    volatile int      bridge_active; /* SceShellCore forwarding stub owns VDA */
+    pid_t             bridge_pid;
+    intptr_t          bridge_args;
 } ctrl_slot_t;
 
 static ctrl_slot_t     g_slots[MAX_SLOTS];
@@ -371,14 +374,39 @@ static void *klog_capture_thread(void *arg) {
 
 /* ── VDI injection ────────────────────────────────────────────────────── */
 static void inject_pad(int slot, const ScePadData *pad) {
+    int vr;
+    uint32_t n;
+
+    if (!g_slots[slot].vdi_ready)
+        return;
+
+    if (g_slots[slot].bridge_active) {
+        vr = shellui_pad_update(g_slots[slot].bridge_pid,
+                                g_slots[slot].bridge_args,
+                                pad, sizeof(*pad));
+        n = ++g_slots[slot].inject_count;
+        if ((n % 600) == 0)
+            gp_log("slot[%d] ShellCore bridge #%u ret=%d\n", slot, n, vr);
+        static int bridge_err_logged = 0;
+        if (vr != 0 && !bridge_err_logged) {
+            gp_log("slot[%d] ShellCore bridge update error=%d\n", slot, vr);
+            bridge_err_logged = 1;
+        }
+        return;
+    }
+
     int32_t h = g_slots[slot].handle;
-    if (h < 0 || !g_slots[slot].vdi_ready) return;
-    int vr = scePadVirtualDeviceInsertData(h, pad);
-    uint32_t n = ++g_slots[slot].inject_count;
+    if (h < 0)
+        return;
+    vr = scePadVirtualDeviceInsertData(h, pad);
+    n = ++g_slots[slot].inject_count;
     if ((n % 600) == 0)
         gp_log("slot[%d] VDI #%u ret=0x%08x\n", slot, n, (uint32_t)vr);
     static int vdi_err_logged = 0;
-    if (vr != 0 && !vdi_err_logged) { gp_log("VDI error 0x%08x\n",(uint32_t)vr); vdi_err_logged=1; }
+    if (vr != 0 && !vdi_err_logged) {
+        gp_log("VDI error 0x%08x\n",(uint32_t)vr);
+        vdi_err_logged=1;
+    }
 }
 
 /* ── ugen detection ───────────────────────────────────────────────────── */
@@ -960,6 +988,51 @@ done:
     memset(&u,0,sizeof(u)); ioctl(fd,USB_FS_UNINIT,&u);
     close(fd);
     return found;
+}
+
+/* DS3/DS4 use the existing SceShellCore forwarding bridge. The bridge
+ * creates the virtual DualSense and calls VDI in the same process context,
+ * avoiding process-local handle errors (0x803b0003) seen on firmware 13.60. */
+static int create_shellcore_bridge_for_slot(int slot) {
+    pid_t pid = -1;
+    intptr_t args = 0;
+    int ret = shellui_pad_inject(g_inject_uid, 1,
+                                 VIRTUAL_DEVICE_TYPE_DUALSENSE,
+                                 &pid, &args);
+    gp_log("slot[%d] ShellCore bridge create ret=%d pid=%d args=0x%lx\n",
+           slot, ret, pid, (unsigned long)args);
+    if (ret != 0 || pid <= 0 || args == 0)
+        return -1;
+
+    pthread_mutex_lock(&g_slot_lock);
+    g_slots[slot].bridge_active = 1;
+    g_slots[slot].bridge_pid = pid;
+    g_slots[slot].bridge_args = args;
+    g_slots[slot].handle = 1 + slot;
+    g_slots[slot].vdi_ready = 1;
+    pthread_mutex_unlock(&g_slot_lock);
+    return 0;
+}
+
+static void stop_shellcore_bridge_for_slot(int slot, const char *reason) {
+    pid_t pid;
+    intptr_t args;
+    int active;
+
+    pthread_mutex_lock(&g_slot_lock);
+    active = g_slots[slot].bridge_active;
+    pid = g_slots[slot].bridge_pid;
+    args = g_slots[slot].bridge_args;
+    g_slots[slot].bridge_active = 0;
+    g_slots[slot].bridge_pid = -1;
+    g_slots[slot].bridge_args = 0;
+    pthread_mutex_unlock(&g_slot_lock);
+
+    if (active) {
+        int ret = shellui_pad_stop(pid, args);
+        gp_log("slot[%d] ShellCore bridge stop ret=%d reason=%s\n",
+               slot, ret, reason ? reason : "-");
+    }
 }
 
 /* ── Create VDA and force_bind for a slot ─────────────────────────────── */
@@ -1700,7 +1773,10 @@ exit_slot:
         gp_log("slot[%d] disconnect virtual dev=0x%llx ret=%d\n",
                slot, (unsigned long long)vdev, vdr);
     }
-    scePadVirtualDeviceDeleteDevice(g_slots[slot].handle);
+    if (g_slots[slot].bridge_active)
+        stop_shellcore_bridge_for_slot(slot, "USB thread exit");
+    else if (g_slots[slot].handle >= 0)
+        scePadVirtualDeviceDeleteDevice(g_slots[slot].handle);
     pthread_mutex_lock(&g_slot_lock);
     g_slots[slot].handle    = -1;
     g_slots[slot].vdi_ready = 0;
@@ -1712,6 +1788,9 @@ exit_slot:
     g_slots[slot].virtual_dev_id = 0;
     g_slots[slot].evicted_physical_dev = 0;
     g_slots[slot].physical_evict_done = 0;
+    g_slots[slot].bridge_active = 0;
+    g_slots[slot].bridge_pid = -1;
+    g_slots[slot].bridge_args = 0;
     g_slots[slot].dev_path[0] = '\0';
     pthread_mutex_unlock(&g_slot_lock);
     if (evicted_phys)
@@ -1829,10 +1908,20 @@ static void *controller_manager_thread(void *arg) {
             pthread_mutex_unlock(&g_slot_lock);
             g_assign_slot = slot;
 
-            /* Create VDA and force_bind (shows PS5 assignment dialog) */
-            int32_t handle = create_vda_for_slot(slot);
+            /* DS3/DS4 stream through SceShellCore so VDI executes in
+             * the process that owns the virtual-device handle. */
+            int use_shellcore_bridge =
+                ds3_is_supported_vidpid(vid, pid) ||
+                ds4_is_supported_vidpid(vid, pid);
+            int32_t handle = -1;
+            if (use_shellcore_bridge) {
+                if (create_shellcore_bridge_for_slot(slot) == 0)
+                    handle = 1 + slot; /* occupancy sentinel */
+            } else {
+                handle = create_vda_for_slot(slot);
+            }
             if (handle < 0) {
-                gp_log("manager: slot[%d] VDA failed — releasing\n", slot);
+                gp_log("manager: slot[%d] VDA/bridge failed — releasing\n", slot);
                 pthread_mutex_lock(&g_slot_lock);
                 g_slots[slot].usb_active = 0;
                 g_slots[slot].release_requested = 0;
@@ -1858,7 +1947,10 @@ static void *controller_manager_thread(void *arg) {
             usb_thread_arg_t *targ = malloc(sizeof(*targ));
             if (!targ) {
                 gp_log("manager: malloc fail for slot[%d]\n", slot);
-                scePadVirtualDeviceDeleteDevice(handle);
+                if (g_slots[slot].bridge_active)
+                    stop_shellcore_bridge_for_slot(slot, "manager launch failure");
+                else
+                    scePadVirtualDeviceDeleteDevice(handle);
                 pthread_mutex_lock(&g_slot_lock);
                 g_slots[slot].handle=-1; g_slots[slot].vdi_ready=0;
                 g_slots[slot].usb_active=0; g_slots[slot].release_requested=0; g_slots[slot].released_pause=0; g_slots[slot].release_wait_neutral=0; g_slots[slot].dev_path[0]='\0';
@@ -1877,7 +1969,10 @@ static void *controller_manager_thread(void *arg) {
             if (pthread_create(&tid, NULL, usb_hid_thread, targ) != 0) {
                 gp_log("manager: pthread_create fail slot[%d]\n", slot);
                 free(targ);
-                scePadVirtualDeviceDeleteDevice(handle);
+                if (g_slots[slot].bridge_active)
+                    stop_shellcore_bridge_for_slot(slot, "manager launch failure");
+                else
+                    scePadVirtualDeviceDeleteDevice(handle);
                 pthread_mutex_lock(&g_slot_lock);
                 g_slots[slot].handle=-1; g_slots[slot].vdi_ready=0;
                 g_slots[slot].usb_active=0; g_slots[slot].release_requested=0; g_slots[slot].released_pause=0; g_slots[slot].release_wait_neutral=0; g_slots[slot].dev_path[0]='\0';
@@ -1965,7 +2060,9 @@ static void cleanup_and_exit(int sig) {
             close(fd);
             g_slots[s].usb_fd = -1;
         }
-        if (g_slots[s].handle >= 0)
+        if (g_slots[s].bridge_active)
+            shellui_pad_stop(g_slots[s].bridge_pid, g_slots[s].bridge_args);
+        else if (g_slots[s].handle >= 0)
             scePadVirtualDeviceDeleteDevice(g_slots[s].handle);
     }
     _exit(0);
@@ -2001,6 +2098,9 @@ int main(void) {
         g_slots[s].virtual_dev_id = 0;
         g_slots[s].evicted_physical_dev = 0;
         g_slots[s].physical_evict_done = 0;
+        g_slots[s].bridge_active = 0;
+        g_slots[s].bridge_pid = -1;
+        g_slots[s].bridge_args = 0;
         g_slots[s].dev_path[0]= '\0';
     }
     g_assign_slot = -1;
