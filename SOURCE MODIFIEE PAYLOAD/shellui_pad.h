@@ -78,6 +78,10 @@ int shellui_pad_inject(int32_t userId, int force_virtual_vda,
 int shellui_pad_update(pid_t shellui_pid, intptr_t args_kaddr,
                        const void *pad_data, uint32_t pad_data_len);
 
+/* Ask a running target-process forwarding stub to stop. The stub owns and
+ * deletes its virtual device before exiting. */
+int shellui_pad_stop(pid_t shellui_pid, intptr_t args_kaddr);
+
 int shellui_pad_direct_usable(pid_t shellui_pid, intptr_t args_kaddr);
 int shellui_pad_direct_mode(pid_t shellui_pid, intptr_t args_kaddr);
 int shellui_pad_direct_adopt_vdi_handle(pid_t shellui_pid, intptr_t args_kaddr,
