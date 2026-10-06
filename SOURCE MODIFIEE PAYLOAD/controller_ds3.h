@@ -32,3 +32,8 @@ int ds3_parse_input(const uint8_t *buf, uint32_t len, ScePadData *out_pad);
 int ds3_handle_packet(int fd, struct usb_fs_endpoint *eps,
                       const uint8_t *buf, uint32_t len,
                       ScePadData *out_pad);
+
+/* Parse the 49-byte DS3/Sixaxis Bluetooth HID input report (ID 0x01).
+ * Returns 0 for malformed reports and the known bogus byte-1=0xff frame. */
+int ds3_parse_bt_input(const uint8_t *buf, uint32_t len,
+                       ScePadData *out_pad);

@@ -60,6 +60,11 @@ const char *ds4_name(uint16_t vid, uint16_t pid);
  * buf MUST be at least 10 bytes. */
 void ds4_parse_input(const uint8_t *buf, ScePadData *out_pad);
 
+/* Parse transport-level DS4 Bluetooth HID input.
+ * Supports full report 0x11 (78 bytes) and minimal report 0x01 (10 bytes). */
+int ds4_parse_bt_input(const uint8_t *buf, uint32_t len,
+                       ScePadData *out_pad);
+
 /* Handle one IN packet. Returns 1 if pad updated, 0 to skip. */
 int  ds4_handle_packet(int fd, struct usb_fs_endpoint *eps,
                        const uint8_t *buf, uint32_t len,

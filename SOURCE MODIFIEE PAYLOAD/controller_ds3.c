@@ -99,3 +99,19 @@ int ds3_handle_packet(int fd, struct usb_fs_endpoint *eps,
     (void)eps;
     return ds3_parse_input(buf, len, out_pad);
 }
+
+int ds3_parse_bt_input(const uint8_t *buf, uint32_t len,
+                       ScePadData *out_pad) {
+    if (!buf || !out_pad || len != 49 || buf[0] != 0x01)
+        return 0;
+
+    /*
+     * The Sixaxis/DS3 Bluetooth input state uses the same 49-byte report as
+     * the normal HID parser. Linux also filters an occasional bogus BT frame
+     * where byte 1 is 0xff and the remainder does not represent real state.
+     */
+    if (buf[1] == 0xff)
+        return 0;
+
+    return ds3_parse_input(buf, len, out_pad);
+}

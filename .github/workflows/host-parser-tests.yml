@@ -1,0 +1,27 @@
+name: Host parser tests
+
+on:
+  push:
+    branches:
+      - feature/sony-bluetooth-parsers
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sony-parsers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Run wired Sony parser tests
+        run: sh tests/run_sony_tests.sh
+
+      - name: Run Bluetooth Sony parser tests
+        run: sh tests/run_sony_bt_tests.sh
+
+      - name: Run Bluetooth transport tests
+        run: sh tests/run_sony_bt_transport_tests.sh
