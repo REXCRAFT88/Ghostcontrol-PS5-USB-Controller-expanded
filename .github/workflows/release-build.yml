@@ -3,7 +3,7 @@ name: Build release candidate
 on:
   push:
     branches:
-      - "release/v0.1.0-beta"
+      - "release/v0.1.2-beta"
   pull_request:
     branches:
       - main
@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PS5_PAYLOAD_SDK: /opt/ps5-payload-sdk
-      VERSION: v0.1.0-beta
+      VERSION: v0.1.2-beta
     steps:
       - uses: actions/checkout@v4
 
@@ -67,12 +67,22 @@ jobs:
           PKG="dist/GhostControl-Expanded-${VERSION}"
           mkdir -p "${PKG}/ELF"
           mkdir -p "${PKG}/Wireless-DS4"
+
           cp "SOURCE MODIFIEE PAYLOAD/GhostControl-Expanded.elf" "${PKG}/ELF/"
           cp "SOURCE MODIFIEE PAYLOAD/GhostControl-Stop.elf" "${PKG}/ELF/"
           cp "WIRELESS DS4 POORDS4/PoorDS4rc51.elf" "${PKG}/Wireless-DS4/"
           cp "WIRELESS DS4 POORDS4/PoorDS4-status.elf" "${PKG}/Wireless-DS4/"
           cp "WIRELESS DS4 POORDS4/PoorDS4-stop.elf" "${PKG}/Wireless-DS4/"
           cp "WIRELESS DS4 POORDS4/PoorDS4-evidence.elf" "${PKG}/Wireless-DS4/"
+
+          # Also publish each ELF as a standalone GitHub release asset.
+          cp "SOURCE MODIFIEE PAYLOAD/GhostControl-Expanded.elf" dist/
+          cp "SOURCE MODIFIEE PAYLOAD/GhostControl-Stop.elf" dist/
+          cp "WIRELESS DS4 POORDS4/PoorDS4rc51.elf" dist/
+          cp "WIRELESS DS4 POORDS4/PoorDS4-status.elf" dist/
+          cp "WIRELESS DS4 POORDS4/PoorDS4-stop.elf" dist/
+          cp "WIRELESS DS4 POORDS4/PoorDS4-evidence.elf" dist/
+
           cp Launch-GhostControl-Expanded.ps1 "${PKG}/"
           cp Launch-GhostControl-Expanded.bat "${PKG}/"
           cp README.md CREDITS.md "${PKG}/"
@@ -82,34 +92,47 @@ jobs:
           cp "WIRELESS DS4 POORDS4/README.md" "${PKG}/Wireless-DS4/"
           (cd dist && zip -r "GhostControl-Expanded-${VERSION}.zip" "GhostControl-Expanded-${VERSION}")
 
-      - name: Upload release ZIP
+      - name: Upload release assets
         uses: actions/upload-artifact@v4
         with:
-          name: GhostControl-Expanded-v0.1.0-beta
-          path: dist/GhostControl-Expanded-v0.1.0-beta.zip
+          name: GhostControl-Expanded-v0.1.2-beta
+          path: |
+            dist/GhostControl-Expanded-v0.1.2-beta.zip
+            dist/GhostControl-Expanded.elf
+            dist/GhostControl-Stop.elf
+            dist/PoorDS4rc51.elf
+            dist/PoorDS4-status.elf
+            dist/PoorDS4-stop.elf
+            dist/PoorDS4-evidence.elf
           if-no-files-found: error
 
   publish-prerelease:
     needs: build
-    if: github.ref == 'refs/heads/release/v0.1.0-beta'
+    if: github.ref == 'refs/heads/release/v0.1.2-beta'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: GhostControl-Expanded-v0.1.0-beta
+          name: GhostControl-Expanded-v0.1.2-beta
           path: dist
+
       - name: Create or update GitHub prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v0.1.0-beta >/dev/null 2>&1; then
-            gh release upload v0.1.0-beta dist/GhostControl-Expanded-v0.1.0-beta.zip --clobber
+          ASSETS=(
+            dist/GhostControl-Expanded-v0.1.2-beta.zip
+            dist/GhostControl-Expanded.elf
+            dist/GhostControl-Stop.elf
+            dist/PoorDS4rc51.elf
+            dist/PoorDS4-status.elf
+            dist/PoorDS4-stop.elf
+            dist/PoorDS4-evidence.elf
+          )
+
+          if gh release view v0.1.2-beta >/dev/null 2>&1; then
+            gh release upload v0.1.2-beta "${ASSETS[@]}" --clobber
           else
-            gh release create v0.1.0-beta \
-              dist/GhostControl-Expanded-v0.1.0-beta.zip \
-              --target "${GITHUB_SHA}" \
-              --title "GhostControl Expanded v0.1.0-beta" \
-              --notes-file docs/RELEASE_NOTES_0.1.0-beta.md \
-              --prerelease
+            gh release create v0.1.2-beta "${ASSETS[@]}"               --target "${GITHUB_SHA}"               --title "GhostControl Expanded v0.1.2-beta"               --notes-file docs/RELEASE_NOTES_0.1.2-beta.md               --prerelease
           fi
