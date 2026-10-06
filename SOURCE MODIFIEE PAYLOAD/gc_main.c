@@ -1004,6 +1004,17 @@ static int create_shellcore_bridge_for_slot(int slot) {
     if (ret != 0 || pid <= 0 || args == 0)
         return -1;
 
+    {
+        int32_t remote_handle = -1;
+        if (shellui_pad_wait_ready(pid, args, 65000, &remote_handle) != 0) {
+            gp_log("slot[%d] ShellCore bridge never became ready; stopping\n", slot);
+            shellui_pad_stop(pid, args);
+            return -1;
+        }
+        gp_log("slot[%d] ShellCore bridge ready remote_handle=0x%x\n",
+               slot, (uint32_t)remote_handle);
+    }
+
     pthread_mutex_lock(&g_slot_lock);
     g_slots[slot].bridge_active = 1;
     g_slots[slot].bridge_pid = pid;
