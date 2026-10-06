@@ -74,3 +74,27 @@ files are:
 
 The reports are designed to identify which structural condition changed so a
 new firmware can be evaluated without adding an unsafe broad version bypass.
+
+
+## GhostControl Expanded compatibility digest
+
+The vendored GhostControl Expanded backend additionally writes:
+
+`/data/poords4/fw-compat-last.txt`
+
+on every game admission attempt after the structural evidence has been computed.
+
+This file is diagnostic only. It does not alter the exact-manifest or structural-admission result.
+
+For an unlisted firmware such as 13.60 it records:
+
+- detected firmware ID;
+- exact-vs-structural admission mode;
+- structural ABI pass/fail;
+- common state/read wrapper relationships;
+- controller-information ABI evidence;
+- source RemotePlay vs game libScePad fingerprint matches;
+- executable mapping/protection results;
+- per-symbol source/game fingerprints.
+
+A rejection should be investigated from this digest plus the full source/game reports rather than bypassing the structural gate.
