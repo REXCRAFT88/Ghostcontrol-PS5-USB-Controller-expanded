@@ -380,6 +380,7 @@ static void inject_pad(int slot, const ScePadData *pad) {
 #define PID_NATIVE  0x310bu
 #define VID_SWITCH  0x057eu
 #define PID_SWITCH  0x2009u
+#define PID_N64_NSO 0x2019u
 #define VID_XBOX    0x045eu
 #define PID_XBOX    0x02eau
 
@@ -400,6 +401,10 @@ static void inject_pad(int slot, const ScePadData *pad) {
  * Microsoft USB devices). */
 static int match_known_vidpid(uint16_t vid, uint16_t pid,
                               uint16_t *out_vid, uint16_t *out_pid) {
+    if (vid == VID_SWITCH && pid == PID_N64_NSO) {
+        *out_vid = vid; *out_pid = pid;
+        return 1;
+    }
     if (mamba_is_supported_vidpid(vid, pid)) {
         *out_vid = vid; *out_pid = pid;
         return 1;
@@ -1207,6 +1212,7 @@ main_loop: ;
     int is_ds4 = (vid == VID_SONY || vid == VID_HORI);
     int is_mamba_xinput = mamba_is_xinput_vidpid(vid, pid);
     int is_mamba_switch = mamba_is_switch_vidpid(vid, pid);
+    int is_n64_nso = (vid == VID_SWITCH && pid == PID_N64_NSO);
     int hs_state = (pid==PID_XBOX || is_ds4 || is_mamba_xinput) ? HS_STREAMING : HS_WAIT_81_01;
     uint8_t nintendo_seq = 1;
     g_slots[slot].usb_fd = fd;  /* register fd for clean teardown on SIGTERM */
@@ -1263,7 +1269,11 @@ main_loop: ;
             injected = xbox_handle_packet(fd, eps, buf, len, &pad);
         } else {
             if (is_mamba_switch) mamba_log_switch_packet(buf, len);
-            injected = nintendo_handle_packet(fd, eps, buf, len, &hs_state, &nintendo_seq, &pad);
+            injected = nintendo_handle_packet_profile(
+                fd, eps, buf, len, &hs_state, &nintendo_seq,
+                is_n64_nso ? NINTENDO_PROFILE_N64
+                           : NINTENDO_PROFILE_STANDARD,
+                &pad);
             if (injected > 0 && is_mamba_switch)
                 pad.leftStick.y = (uint8_t)(255u - pad.leftStick.y);
         }
@@ -1441,6 +1451,8 @@ static void *controller_manager_thread(void *arg) {
             }
 
             const char *name =
+                (vid == VID_SWITCH && pid == PID_N64_NSO)
+                    ? "Nintendo Switch Online N64 Controller" :
                 mamba_is_supported_vidpid(vid,pid) ? mamba_name(vid,pid) :
                                                      "Unknown";
 

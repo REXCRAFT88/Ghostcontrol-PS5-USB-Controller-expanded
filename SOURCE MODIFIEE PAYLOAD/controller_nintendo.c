@@ -113,49 +113,173 @@ int nintendo_handle_packet(int fd, struct usb_fs_endpoint *eps,
                            const uint8_t *buf, uint32_t len,
                            int *hs_state, uint8_t *seq,
                            ScePadData *out_pad) {
-    uint8_t rid = buf[0];
+    return nintendo_handle_packet_profile(
+        fd, eps, buf, len, hs_state, seq,
+        NINTENDO_PROFILE_STANDARD, out_pad);
+}
+static uint8_t n64_axis_dir(int negative, int positive) {
+    if (negative && !positive) return 0u;
+    if (positive && !negative) return 255u;
+    return 128u;
+}
 
-    /* Data packets */
-    if ((rid == 0x00 || rid == 0x30) && len >= 12) {
-        if (rid == 0x00 && buf[1] == 0) return 0; /* all-zero artifact */
-        if (*hs_state != HS_STREAMING) *hs_state = HS_STREAMING;
-        nintendo_parse_0x30(buf, out_pad);
-        return 1;
-    }
-    if (rid == 0x3f && len >= 9) {
-        nintendo_parse_0x3f(buf, out_pad);
-        return 1;
-    }
-    if (rid == 0x21 && len >= 12) {
-        LOG("0x21 ACK subcmd=0x%02x hs=%d\n", (buf[12]&0x7f), *hs_state);
-        if (*hs_state == HS_STREAMING) {
+void nintendo_parse_n64_0x30(const uint8_t *b, ScePadData *o) {
+    if (!b || !o) return;
+
+    const uint8_t br = b[3];
+    const uint8_t bs = b[4];
+    const uint8_t bl = b[5];
+
+    const uint16_t lx = (uint16_t)(b[6] | ((b[7] & 0x0fu) << 8));
+    const uint16_t ly = (uint16_t)((b[7] >> 4) | ((uint16_t)b[8] << 4));
+
+    uint32_t btn = 0;
+
+    /* N64 face / shoulders. */
+    if (br & 0x08u) btn |= SCE_PAD_BUTTON_CROSS;    /* A */
+    if (br & 0x04u) btn |= SCE_PAD_BUTTON_CIRCLE;   /* B */
+    if (bl & 0x80u) btn |= SCE_PAD_BUTTON_L2;       /* Z */
+    if (bl & 0x40u) btn |= SCE_PAD_BUTTON_L1;       /* L */
+    if (br & 0x40u) btn |= SCE_PAD_BUTTON_R1;       /* R */
+    if (bs & 0x08u) btn |= SCE_PAD_BUTTON_R2;       /* ZR */
+
+    if (bs & 0x02u) btn |= SCE_PAD_BUTTON_OPTIONS;  /* Start */
+    if (bs & 0x10u) btn |= SCE_PAD_BUTTON_PS;       /* Home */
+    if (bs & 0x20u) btn |= SCE_PAD_BUTTON_CREATE;   /* Capture */
+
+    /* D-pad uses the normal Nintendo left-byte bits. */
+    if (bl & 0x02u) btn |= SCE_PAD_BUTTON_UP;
+    if (bl & 0x01u) btn |= SCE_PAD_BUTTON_DOWN;
+    if (bl & 0x04u) btn |= SCE_PAD_BUTTON_RIGHT;
+    if (bl & 0x08u) btn |= SCE_PAD_BUTTON_LEFT;
+
+    memset(o, 0, sizeof(*o));
+    o->buttons = btn;
+    o->leftStick.x = ntoh_stick(lx);
+    o->leftStick.y = ntoh_stick(ly);
+
+    /* Linux hid-nintendo maps these Switch report bits to N64 C-buttons:
+     *   C Up    = Y     (br 0x01)
+     *   C Down  = ZR    (br 0x80)
+     *   C Left  = X     (br 0x02)
+     *   C Right = Minus (bs 0x01)
+     *
+     * Represent them as right-stick digital directions on the virtual pad.
+     */
+    o->rightStick.x = n64_axis_dir((br & 0x02u) != 0,
+                                   (bs & 0x01u) != 0);
+    o->rightStick.y = n64_axis_dir((br & 0x01u) != 0,
+                                   (br & 0x80u) != 0);
+
+    o->analogButtons.l2 = (bl & 0x80u) ? 255u : 0u;
+    o->analogButtons.r2 = (bs & 0x08u) ? 255u : 0u;
+    o->connected = 1;
+    o->quat.w = 1.0f;
+}
+
+void nintendo_parse_n64_0x3f(const uint8_t *b, ScePadData *o) {
+    if (!b || !o) return;
+
+    const uint8_t br = b[1];
+    const uint8_t bs = b[2];
+    const uint8_t hat = b[3];
+    const uint8_t bl = b[8];
+
+    uint32_t btn = 0;
+    if (br & 0x08u) btn |= SCE_PAD_BUTTON_CROSS;
+    if (br & 0x04u) btn |= SCE_PAD_BUTTON_CIRCLE;
+    if (bl & 0x80u) btn |= SCE_PAD_BUTTON_L2;
+    if (bl & 0x40u) btn |= SCE_PAD_BUTTON_L1;
+    if (br & 0x40u) btn |= SCE_PAD_BUTTON_R1;
+    if (bs & 0x08u) btn |= SCE_PAD_BUTTON_R2;
+    if (bs & 0x02u) btn |= SCE_PAD_BUTTON_OPTIONS;
+    if (bs & 0x10u) btn |= SCE_PAD_BUTTON_PS;
+    if (bs & 0x20u) btn |= SCE_PAD_BUTTON_CREATE;
+
+    btn |= hat_to_dpad(hat);
+
+    memset(o, 0, sizeof(*o));
+    o->buttons = btn;
+    o->leftStick.x = b[4];
+    o->leftStick.y = b[5];
+    o->rightStick.x = n64_axis_dir((br & 0x02u) != 0,
+                                   (bs & 0x01u) != 0);
+    o->rightStick.y = n64_axis_dir((br & 0x01u) != 0,
+                                   (br & 0x80u) != 0);
+    o->analogButtons.l2 = (bl & 0x80u) ? 255u : 0u;
+    o->analogButtons.r2 = (bs & 0x08u) ? 255u : 0u;
+    o->connected = 1;
+    o->quat.w = 1.0f;
+}
+
+int nintendo_handle_packet_profile(int fd, struct usb_fs_endpoint *eps,
+                                   const uint8_t *buf, uint32_t len,
+                                   int *hs_state, uint8_t *seq,
+                                   int profile,
+                                   ScePadData *out_pad) {
+    if (!buf || !hs_state || !seq || !out_pad || len < 1u)
+        return 0;
+
+    const uint8_t rid = buf[0];
+
+    if ((rid == 0x00u || rid == 0x30u) && len >= 12u) {
+        if (rid == 0x00u && buf[1] == 0u)
+            return 0;
+        if (*hs_state != HS_STREAMING)
+            *hs_state = HS_STREAMING;
+
+        if (profile == NINTENDO_PROFILE_N64)
+            nintendo_parse_n64_0x30(buf, out_pad);
+        else
             nintendo_parse_0x30(buf, out_pad);
+        return 1;
+    }
+
+    if (rid == 0x3fu && len >= 9u) {
+        if (profile == NINTENDO_PROFILE_N64)
+            nintendo_parse_n64_0x3f(buf, out_pad);
+        else
+            nintendo_parse_0x3f(buf, out_pad);
+        return 1;
+    }
+
+    if (rid == 0x21u && len >= 12u) {
+        LOG("0x21 ACK subcmd=0x%02x hs=%d\n", (buf[12] & 0x7fu), *hs_state);
+        if (*hs_state == HS_STREAMING) {
+            if (profile == NINTENDO_PROFILE_N64)
+                nintendo_parse_n64_0x30(buf, out_pad);
+            else
+                nintendo_parse_0x30(buf, out_pad);
             return 1;
         }
         return 0;
     }
-    if (rid == 0x81) {
+
+    if (rid == 0x81u) {
         if (*hs_state == HS_STREAMING) {
             LOG("0x81 sub=0x%02x while streaming — reconnect\n", buf[1]);
             *hs_state = HS_WAIT_81_01;
             return 0;
         }
-        if (buf[1] == 0x01 && *hs_state == HS_WAIT_81_01) {
+        if (buf[1] == 0x01u && *hs_state == HS_WAIT_81_01) {
             usb_send_cmd(fd, &eps[1], 0x80, 0x02);
             LOG("0x81 0x01 → [80 02]\n");
             *hs_state = HS_WAIT_81_02;
-        } else if (buf[1] == 0x02 && *hs_state <= HS_WAIT_81_02) {
+        } else if (buf[1] == 0x02u && *hs_state <= HS_WAIT_81_02) {
             usb_send_cmd(fd, &eps[1], 0x80, 0x04);
             LOG("0x81 0x02 → [80 04] + subcmds\n");
-            uint8_t d[]={0x01};
-            nintendo_send_subcmd(fd,eps,seq,0x40,d,1);
-            nintendo_send_subcmd(fd,eps,seq,0x48,d,1);
-            nintendo_send_subcmd(fd,eps,seq,0x30,d,1);
-            uint8_t d2[]={0x30};
-            nintendo_send_subcmd(fd,eps,seq,0x03,d2,1);
+
+            uint8_t d[] = {0x01};
+            nintendo_send_subcmd(fd, eps, seq, 0x40, d, 1);
+            nintendo_send_subcmd(fd, eps, seq, 0x48, d, 1);
+            nintendo_send_subcmd(fd, eps, seq, 0x30, d, 1);
+
+            uint8_t d2[] = {0x30};
+            nintendo_send_subcmd(fd, eps, seq, 0x03, d2, 1);
             *hs_state = HS_STREAMING;
         }
         return 0;
     }
+
     return 0;
 }
