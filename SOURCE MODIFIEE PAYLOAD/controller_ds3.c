@@ -50,9 +50,6 @@ int ds3_parse_input(const uint8_t *b, uint32_t len, ScePadData *o) {
      * the report ID through the userspace transport, so accept either shape
      * as long as the core offsets are present.
      */
-    uint32_t off = (b[0] == 0x01u) ? 0u : 0u;
-    (void)off;
-
     memset(o, 0, sizeof(*o));
 
     const uint8_t b1 = b[2];
