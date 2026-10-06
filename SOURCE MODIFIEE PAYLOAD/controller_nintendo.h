@@ -28,10 +28,16 @@ int  nintendo_handle_packet(int fd, struct usb_fs_endpoint *eps,
 
 #define NINTENDO_PROFILE_STANDARD 0
 #define NINTENDO_PROFILE_N64      1
+#define NINTENDO_PROFILE_SNES     2
+#define NINTENDO_PROFILE_GENESIS  3
 
 /* Nintendo Switch Online N64 controller profile (USB VID:PID 057e:2019). */
 void nintendo_parse_n64_0x30(const uint8_t *buf, ScePadData *out_pad);
 void nintendo_parse_n64_0x3f(const uint8_t *buf, ScePadData *out_pad);
+void nintendo_parse_snes_0x30(const uint8_t *buf, ScePadData *out_pad);
+void nintendo_parse_snes_0x3f(const uint8_t *buf, ScePadData *out_pad);
+void nintendo_parse_genesis_0x30(const uint8_t *buf, ScePadData *out_pad);
+void nintendo_parse_genesis_0x3f(const uint8_t *buf, ScePadData *out_pad);
 
 int nintendo_handle_packet_profile(int fd, struct usb_fs_endpoint *eps,
                                    const uint8_t *buf, uint32_t len,
