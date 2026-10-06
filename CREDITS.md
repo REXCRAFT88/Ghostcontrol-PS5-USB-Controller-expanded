@@ -15,3 +15,11 @@ ont ete gardes dans les sources autant que possible.
   changement user, tests Manba/officielle .
 
 
+
+## Wireless DualShock 4 Backend
+
+- PoorDS4 by ItsBlurf
+  - https://github.com/ItsBlurf/PoorDS4
+  - GPL-3.0-or-later
+  - Used as the optional native-paired wireless DS4 backend and architecture reference.
+  - Vendored separately so its game-bridge logic remains isolated from the USB/GameCube payload.
