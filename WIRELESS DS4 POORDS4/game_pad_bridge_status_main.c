@@ -17,6 +17,7 @@
 #include "wireless_ds4.h"
 
 #define SUPERVISOR_REPORT "/data/poords4/game-pad-bridge-supervisor.txt"
+#define COMPAT_REPORT     "/data/poords4/fw-compat-last.txt"
 #define STATUS_REPORT     "/data/poords4/game-pad-bridge-status.txt"
 #define STATUS_REPORT_TMP STATUS_REPORT ".tmp"
 
@@ -102,6 +103,12 @@ main(void)
         SUPERVISOR_REPORT, supervisor, sizeof(supervisor));
     if (supervisor_length < 0)
         supervisor[0] = '\0';
+
+    char compatibility[4096];
+    ssize_t compatibility_length = read_text(
+        COMPAT_REPORT, compatibility, sizeof(compatibility));
+    if (compatibility_length < 0)
+        compatibility[0] = '\0';
 
     pid_t reader_pid = -1;
     intptr_t reader_args = 0;
@@ -310,6 +317,17 @@ main(void)
                 evt->lx, evt->ly, evt->rx, evt->ry,
                 evt->l2, evt->r2, btn_str);
     }
+
+    fprintf(
+        f,
+        "--- firmware compatibility ---\n"
+        "compatibility_read_result=%d\n%s",
+        (int)compatibility_length,
+        compatibility_length >= 0 ? compatibility : "");
+    if (compatibility_length >= 0 &&
+        compatibility_length > 0 &&
+        compatibility[compatibility_length - 1] != '\n')
+        fputc('\n', f);
 
     fprintf(f, "--- supervisor ---\n%s", supervisor);
     fclose(f);
