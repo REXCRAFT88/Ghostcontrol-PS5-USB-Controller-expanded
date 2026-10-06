@@ -2117,8 +2117,8 @@ int main(void) {
     int32_t userId=-1, fgUser=-1; int ret;
 
     ghostpad_status_log_reset();
-    gp_log("GhostControl Expanded v0.1.0-beta starting - %d slots\n", MAX_SLOTS);
-    notify("GhostControl Expanded v0.1.0-beta");
+    gp_log("GhostControl Expanded v0.1.4-beta starting - %d slots\n", MAX_SLOTS);
+    notify("GhostControl Expanded v0.1.4-beta");
 
     /* Kill previous instance */
     { int pfd=open(PID_PATH,O_RDONLY);
