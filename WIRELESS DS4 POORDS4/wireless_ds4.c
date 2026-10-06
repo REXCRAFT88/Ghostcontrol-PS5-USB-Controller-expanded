@@ -5275,6 +5275,79 @@ wireless_ds4_game_bridge_run_passive(
         "controller_info=0x%x\n",
         state_target_protection, read_target_protection,
         data_target_protection, controller_info_protection);
+
+    /*
+     * GhostControl Expanded compatibility digest.
+     *
+     * Keep this deliberately read-only/fail-closed: it records the exact
+     * structural-admission evidence already computed above, but never changes
+     * the decision. This makes first-run testing on an unlisted firmware such
+     * as 13.60 much easier to triage without weakening PoorDS4's checks.
+     */
+    {
+        int compat_fd = open(
+            POORDS4_DATA_DIR "/fw-compat-last.txt",
+            O_WRONLY | O_CREAT | O_TRUNC, 0600);
+        if (compat_fd >= 0) {
+            report_printf(
+                compat_fd,
+                "firmware=0x%08x\n"
+                "poords4_rc=%d\n"
+                "admission=%s\n"
+                "exact_manifest=%d\n"
+                "structural_abi=%d\n"
+                "common_state_target=%d\n"
+                "common_read_target=%d\n"
+                "controller_info_prefix_ok=%d\n"
+                "controller_info_exec=%d\n"
+                "controller_info_abi_ok=%d\n"
+                "source_firmware=0x%08x\n"
+                "source_fingerprint_mask=0x%02x\n"
+                "source_library_match=%d\n"
+                "source_controller_runtime_abi=%d\n"
+                "state_target_exec=%d\n"
+                "read_target_exec=%d\n"
+                "data_target_exec=%d\n"
+                "state_target_protection=0x%x\n"
+                "read_target_protection=0x%x\n"
+                "data_target_protection=0x%x\n"
+                "controller_info_protection=0x%x\n",
+                firmware, POORDS4_RC_VERSION,
+                structural_abi
+                    ? (exact_manifest ? "accepted-exact" : "accepted-structural")
+                    : (executable_mapping_wait
+                        ? "retry-executable-mapping"
+                        : "rejected-structural"),
+                exact_manifest, structural_abi,
+                common_state_target, common_read_target,
+                controller_info_prefix_ok, controller_info_exec,
+                controller_info_abi_ok,
+                g_source_pad_firmware, g_source_pad_fingerprint_mask,
+                source_library_match,
+                g_source_controller_info_runtime_abi,
+                state_target_exec, read_target_exec, data_target_exec,
+                state_target_protection, read_target_protection,
+                data_target_protection, controller_info_protection);
+
+            for (unsigned index = 0;
+                 index < POORDS4_PAD_FINGERPRINT_COUNT; ++index) {
+                report_printf(
+                    compat_fd,
+                    "fingerprint_%u_game=0x%016llx\n"
+                    "fingerprint_%u_source=0x%016llx\n"
+                    "fingerprint_%u_match=%d\n",
+                    index,
+                    (unsigned long long)game_pad_hashes[index],
+                    index,
+                    (unsigned long long)g_source_pad_fingerprints[index],
+                    index,
+                    game_pad_hashes[index] ==
+                        g_source_pad_fingerprints[index]);
+            }
+            close(compat_fd);
+        }
+    }
+
     if (!structural_abi) {
         report_printf(
             report_fd,
