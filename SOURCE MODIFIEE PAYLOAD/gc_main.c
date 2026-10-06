@@ -885,6 +885,23 @@ static int probe_one_path(const char *path, uint16_t *out_vid, uint16_t *out_pid
                 close(fd);
                 return 1;
             }
+
+            {
+                struct usb_interface_descriptor hid_id;
+                memset(&hid_id, 0, sizeof(hid_id));
+                if (ioctl(fd, USB_GET_RX_INTERFACE_DESC, &hid_id) == 0) {
+                    gp_log("scan: unsupported USB VID=0x%04x PID=0x%04x "
+                           "ifClass=0x%02x ifSub=0x%02x ifProto=0x%02x\n",
+                           vid, pid, hid_id.bInterfaceClass,
+                           hid_id.bInterfaceSubClass,
+                           hid_id.bInterfaceProtocol);
+                    if (hid_id.bInterfaceClass == 0x03) {
+                        gp_log("scan: HID gamepad candidate %04x:%04x "
+                               "(generic HID backend not mapped yet)\n",
+                               vid, pid);
+                    }
+                }
+            }
         } else {
             gp_log("scan: %s USB_GET_DEVICE_DESC errno=%d\n", path, errno);
         }
@@ -982,11 +999,19 @@ static int32_t create_vda_for_slot(int slot) {
             gp_log("slot[%d] no Open Pad remote handle for dev=0x%llx\n",
                    slot, (unsigned long long)dev_id);
         }
-        handle = (int32_t)(dev_id & 0xffffffffu);
-        gp_log("slot[%d] using local VDA handle=0x%x for VDI\n",
-               slot, (uint32_t)handle);
-        if (is_mamba)
+        if (is_mamba) {
+            handle = (int32_t)(dev_id & 0xffffffffu);
+            gp_log("slot[%d] Manba local VDA token=0x%x for VDI\n",
+                   slot, (uint32_t)handle);
             maybe_disconnect_physical_pad_for_slot(slot);
+        } else if (open_handle >= 0) {
+            handle = open_handle;
+            gp_log("slot[%d] non-Manba using Open Pad handle=0x%x for VDI\n",
+                   slot, (uint32_t)handle);
+        } else {
+            gp_log("slot[%d] non-Manba retaining VDA-return handle=0x%x\n",
+                   slot, (uint32_t)handle);
+        }
     } else if (handle >= 0) {
         gp_log("slot[%d] klog timeout — using direct handle %d\n", slot, handle);
     } else {
