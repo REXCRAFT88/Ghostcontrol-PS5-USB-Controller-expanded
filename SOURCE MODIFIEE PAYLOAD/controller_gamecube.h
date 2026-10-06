@@ -77,3 +77,16 @@ int gamecube_send_nintendo_rumble(int fd, struct usb_fs_endpoint *eps,
  * The observed DS4-style layout stores small/large motor intensity at [3]/[4].
  * Returns 1 when either motor is non-zero, otherwise 0. */
 int gamecube_feedback_wants_rumble(const uint8_t *buf, uint32_t len);
+
+typedef struct {
+    uint8_t min_axis[6];
+    uint8_t max_axis[6];
+} GameCubeCalibration;
+
+/* SDL's GameCube HID backend starts sticks at 128 +/- 88 and trigger minima
+ * at 40, then expands ranges when real hardware exceeds those defaults. */
+void gamecube_calibration_reset(GameCubeCalibration *cal);
+
+/* Expand observed ranges and remap sticks/triggers to the full 0..255 VDA
+ * range in-place. Buttons and digital trigger hard-clicks are untouched. */
+void gamecube_calibration_apply(GameCubeCalibration *cal, ScePadData *pad);
