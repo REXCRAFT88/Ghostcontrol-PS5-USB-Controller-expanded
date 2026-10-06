@@ -37,3 +37,6 @@ jobs:
 
       - name: Run Bluetooth HCI stream tests
         run: sh tests/run_sony_bt_stream_tests.sh
+
+      - name: Compile passive Bluetooth observer PS5 path
+        run: sh tests/run_sony_bt_passive_prospero_build_test.sh
