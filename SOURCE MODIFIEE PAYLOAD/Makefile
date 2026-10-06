@@ -15,7 +15,7 @@ LDFLAGS += -lScePad -lSceUserService -lpthread -ldl
 
 SRC := gc_main.c shellui_pad.c usb_helpers.c controller_nintendo.c \
        controller_xbox.c controller_ds4.c controller_ds3.c \
-       controller_mamba.c controller_gamecube.c
+       controller_mamba.c controller_gamecube.c controller_generic_hid.c
 
 .PHONY: all stop clean deploy deploy-stop
 
