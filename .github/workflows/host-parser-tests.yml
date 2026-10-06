@@ -3,7 +3,7 @@ name: Host parser tests
 on:
   push:
     branches:
-      - feature/sony-bluetooth-parsers
+      - "feature/sony-bluetooth-*"
   pull_request:
   workflow_dispatch:
 
@@ -25,3 +25,12 @@ jobs:
 
       - name: Run Bluetooth transport tests
         run: sh tests/run_sony_bt_transport_tests.sh
+
+      - name: Run Bluetooth radio descriptor tests
+        run: sh tests/run_sony_bt_probe_tests.sh
+
+      - name: Compile Bluetooth probe entry point
+        run: sh tests/run_sony_bt_probe_build_test.sh
+
+      - name: Compile Bluetooth probe Prospero path
+        run: sh tests/run_sony_bt_probe_prospero_build_test.sh
