@@ -37,41 +37,77 @@ static const uint8_t HAT_DPAD[9] = {
     /* 8 -- */ 0u,
 };
 
-void ds4_parse_input(const uint8_t *b, ScePadData *o) {
-    o->leftStick.x      = b[1];
-    o->leftStick.y      = b[2];
-    o->rightStick.x     = b[3];
-    o->rightStick.y     = b[4];
-    o->analogButtons.l2 = b[8];
-    o->analogButtons.r2 = b[9];
+static void ds4_parse_common(const uint8_t *p, ScePadData *o) {
+    if (!p || !o) return;
+
+    memset(o, 0, sizeof(*o));
+    o->leftStick.x      = p[0];
+    o->leftStick.y      = p[1];
+    o->rightStick.x     = p[2];
+    o->rightStick.y     = p[3];
+    o->analogButtons.l2 = p[7];
+    o->analogButtons.r2 = p[8];
 
     uint32_t btn = 0;
 
-    /* b[5]: dpad (low nibble, hat 0..8) + face buttons (high nibble) */
-    uint8_t hat = b[5] & 0x0Fu;
+    /* p[4]: dpad (low nibble, hat 0..8) + face buttons (high nibble). */
+    uint8_t hat = p[4] & 0x0Fu;
     if (hat <= 8) btn |= HAT_DPAD[hat];
-    if (b[5] & 0x10u) btn |= SCE_PAD_BUTTON_SQUARE;
-    if (b[5] & 0x20u) btn |= SCE_PAD_BUTTON_CROSS;
-    if (b[5] & 0x40u) btn |= SCE_PAD_BUTTON_CIRCLE;
-    if (b[5] & 0x80u) btn |= SCE_PAD_BUTTON_TRIANGLE;
+    if (p[4] & 0x10u) btn |= SCE_PAD_BUTTON_SQUARE;
+    if (p[4] & 0x20u) btn |= SCE_PAD_BUTTON_CROSS;
+    if (p[4] & 0x40u) btn |= SCE_PAD_BUTTON_CIRCLE;
+    if (p[4] & 0x80u) btn |= SCE_PAD_BUTTON_TRIANGLE;
 
-    /* b[6]: shoulders + select/start + stick clicks */
-    if (b[6] & 0x01u) btn |= SCE_PAD_BUTTON_L1;
-    if (b[6] & 0x02u) btn |= SCE_PAD_BUTTON_R1;
-    if (b[6] & 0x04u) btn |= SCE_PAD_BUTTON_L2;
-    if (b[6] & 0x08u) btn |= SCE_PAD_BUTTON_R2;
-    if (b[6] & 0x10u) btn |= SCE_PAD_BUTTON_SHARE;    /* Share → Create */
-    if (b[6] & 0x20u) btn |= SCE_PAD_BUTTON_OPTIONS;
-    if (b[6] & 0x40u) btn |= SCE_PAD_BUTTON_L3;
-    if (b[6] & 0x80u) btn |= SCE_PAD_BUTTON_R3;
+    /* p[5]: shoulders + Share/Options + stick clicks. */
+    if (p[5] & 0x01u) btn |= SCE_PAD_BUTTON_L1;
+    if (p[5] & 0x02u) btn |= SCE_PAD_BUTTON_R1;
+    if (p[5] & 0x04u) btn |= SCE_PAD_BUTTON_L2;
+    if (p[5] & 0x08u) btn |= SCE_PAD_BUTTON_R2;
+    if (p[5] & 0x10u) btn |= SCE_PAD_BUTTON_SHARE;
+    if (p[5] & 0x20u) btn |= SCE_PAD_BUTTON_OPTIONS;
+    if (p[5] & 0x40u) btn |= SCE_PAD_BUTTON_L3;
+    if (p[5] & 0x80u) btn |= SCE_PAD_BUTTON_R3;
 
-    /* b[7]: PS + touchpad-click (low 2 bits) */
-    if (b[7] & 0x01u) btn |= SCE_PAD_BUTTON_PS;
-    if (b[7] & 0x02u) btn |= SCE_PAD_BUTTON_TOUCH_PAD;
+    /* p[6]: PS + touchpad-click in low bits. */
+    if (p[6] & 0x01u) btn |= SCE_PAD_BUTTON_PS;
+    if (p[6] & 0x02u) btn |= SCE_PAD_BUTTON_TOUCH_PAD;
 
-    o->buttons   = btn;
+    o->buttons = btn;
     o->connected = 1;
-    o->quat.w    = 1.0f;
+    o->quat.w = 1.0f;
+}
+
+void ds4_parse_input(const uint8_t *b, ScePadData *o) {
+    /* USB report 0x01: common state starts immediately after report ID. */
+    ds4_parse_common(&b[1], o);
+}
+
+int ds4_parse_bt_input(const uint8_t *buf, uint32_t len, ScePadData *out_pad) {
+    if (!buf || !out_pad)
+        return 0;
+
+    /*
+     * Full DS4 Bluetooth report:
+     *   report ID 0x11, total 78 bytes
+     *   two transport/reserved bytes
+     *   common gamepad state begins at byte 3.
+     */
+    if (len >= 78 && buf[0] == 0x11) {
+        ds4_parse_common(&buf[3], out_pad);
+        return 1;
+    }
+
+    /*
+     * Bluetooth minimal report:
+     *   report ID 0x01, 10 bytes
+     *   first nine bytes are the same common state used by USB.
+     */
+    if (len >= 10 && buf[0] == 0x01) {
+        ds4_parse_common(&buf[1], out_pad);
+        return 1;
+    }
+
+    return 0;
 }
 
 int ds4_handle_packet(int fd, struct usb_fs_endpoint *eps,
