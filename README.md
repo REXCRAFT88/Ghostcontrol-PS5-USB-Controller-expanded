@@ -2,7 +2,7 @@
 
 GhostControl Expanded is a PS5 controller-compatibility payload for jailbroken consoles. The primary goal is **GameCube controller support through USB GameCube adapters**, with expanded wired Sony-controller support and an optional wireless DualShock 4 backend.
 
-**Release:** v0.1.0-beta  
+**Release:** v0.1.3-beta  
 **Primary test target:** PS5 firmware 13.60  
 **Primary hardware target:** Nintendo-compatible GameCube USB adapters
 
