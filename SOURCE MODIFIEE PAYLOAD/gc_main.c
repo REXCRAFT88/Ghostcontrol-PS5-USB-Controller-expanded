@@ -885,6 +885,23 @@ static int probe_one_path(const char *path, uint16_t *out_vid, uint16_t *out_pid
                 close(fd);
                 return 1;
             }
+
+            {
+                struct usb_interface_descriptor hid_id;
+                memset(&hid_id, 0, sizeof(hid_id));
+                if (ioctl(fd, USB_GET_RX_INTERFACE_DESC, &hid_id) == 0) {
+                    gp_log("scan: unsupported USB VID=0x%04x PID=0x%04x "
+                           "ifClass=0x%02x ifSub=0x%02x ifProto=0x%02x\n",
+                           vid, pid, hid_id.bInterfaceClass,
+                           hid_id.bInterfaceSubClass,
+                           hid_id.bInterfaceProtocol);
+                    if (hid_id.bInterfaceClass == 0x03) {
+                        gp_log("scan: HID gamepad candidate %04x:%04x "
+                               "(generic HID backend not mapped yet)\n",
+                               vid, pid);
+                    }
+                }
+            }
         } else {
             gp_log("scan: %s USB_GET_DEVICE_DESC errno=%d\n", path, errno);
         }
